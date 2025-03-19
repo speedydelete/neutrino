@@ -5,6 +5,8 @@
 
 #include "Event.h"
 #include "Node.h"
+#include "Element.h"
+#include "Document.h"
 
 
 typedef struct CharacterData {

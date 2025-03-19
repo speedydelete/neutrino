@@ -5,6 +5,8 @@
 #include "map.h"
 
 #include "Event.h"
+#include "Element.h"
+#include "Document.h"
 
 
 typedef struct NodeList {

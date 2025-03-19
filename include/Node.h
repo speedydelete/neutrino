@@ -7,6 +7,9 @@
 #include "vector.h"
 #include "map.h"
 
+#include "Element.h"
+#include "Document.h"
+
 
 typedef struct NodeList {
     int length;

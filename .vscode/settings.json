@@ -1,6 +1,11 @@
 {
     "files.associations": {
         "node.h": "c",
-        "map.h": "c"
+        "map.h": "c",
+        "element.h": "c",
+        "event.h": "c",
+        "stdlib.h": "c",
+        "document.h": "c",
+        "attr.h": "c"
     }
 }

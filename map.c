@@ -71,7 +71,7 @@ void map_set_no_replace(map* map, char* key, void* value) {
     }
 }
 
-map* map_remove(map* map, char* key) {
+map* map_delete(map* map, char* key) {
     if (strcmp(map->key, key) == 0) {
         return map->next;
     } else {
@@ -85,7 +85,7 @@ map* map_remove(map* map, char* key) {
     }
 }
 
-map* map_remove_pair(map* map, char* key, void* value) {
+map* map_delete_pair(map* map, char* key, void* value) {
     if (strcmp(map->key, key) == 0 && value == map->value) {
         return map->next;
     } else {

@@ -19,6 +19,8 @@ void map_set(map* map, char* key, void* value);
 void map_set_no_replace(map* map, char* key, void* value);
 map* map_delete(map* map, char* key);
 map* map_delete_pair(map* map, char* key, void* value);
+void print_map(map* map);
+void free_map(map* map);
 
 
 #endif;

@@ -1,5 +1,8 @@
 
+#include "Node.h"
 #include "CharacterData.h"
+#include "Element.h"
+#include "Document.h"
 
 
 typedef struct Text {

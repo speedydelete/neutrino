@@ -2,7 +2,10 @@
 #ifndef INCLUDE_TEXT_H
 #define INCLUDE_TEXTH
 
+#include "Node.h"
 #include "CharacterData.h"
+#include "Element.h"
+#include "Document.h"
 
 
 typedef struct Text {
