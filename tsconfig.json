@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "declaration": true,
+        "emitDeclarationOnly": false,
+        "strict": true,
+        "esModuleInterop": true,
+        "module": "NodeNext",
+        "outDir": "./jslib",
+        "rootDir": "./src",
+        "sourceMap": true
+    },
+    "files": ["src/index.ts", "src/cli.ts"]
+}

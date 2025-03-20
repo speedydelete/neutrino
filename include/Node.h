@@ -35,27 +35,33 @@ typedef enum {
 
 typedef struct Node {
     // EventTarget
-    map* listeners;
-    EventTarget* _parent;
+        map* _listeners;
+        EventTarget* _parent;
     // Node
-    char* baseURI;
-    NodeList* childNodes;
-    struct Node* firstChild;
-    bool isConnected;
-    struct Node* lastChild;
-    struct Node* nextSibling;
-    char* nodeName;
-    NodeType nodeType;
-    char* nodeValue;
-    Document* ownerDocument;
-    struct Node* parentNode;
-    Element* parentElement;
-    struct Node* previousSibling;
-    char* textContent;
+        // accessor char* baseURI;
+        // accessor NodeList* childNodes;
+        struct Node* firstChild;
+        bool isConnected;
+        struct Node* lastChild;
+        struct Node* nextSibling;
+        char* nodeName;
+        NodeType nodeType;
+        char* nodeValue;
+        Document* ownerDocument;
+        struct Node* parentNode;
+        // accessor Element* parentElement;
+        struct Node* previousSibling;
+        // accessor char* textContent;
 } Node;
 
 Node* create_Node(Node* node, char* baseURI, char* nodeName, NodeType nodeType, char* nodeValue);
 void free_Node(Node* node);
+
+char* Node_get_baseURI(Node* node);
+NodeList* Node_get_childNodes(Node* node);
+Element* Node_get_parentElement(Node* node);
+char* Node_get_textContent(Node* node);
+
 Node* Node_appendChild(Node* node, Node* child);
 Node* Node_cloneNode(Node* node, bool deep);
 bool Node_contains(Node* node, Node* other);

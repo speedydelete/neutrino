@@ -1,14 +1,9 @@
 
-#ifndef INCLUDE_Text
-#define INCLUDE_Text
-
-#include "Node.h"
-#include "CharacterData.h"
-#include "Element.h"
-#include "Document.h"
+#ifndef INCLUDE_Comment
+#define INCLUDE_Comment
 
 
-typedef struct Text {
+typedef struct Comment {
     // EventTarget
         map* _listeners;
         EventTarget* _parent;
@@ -32,11 +27,10 @@ typedef struct Text {
         // accessor int length;
         // accessor Element* nextElementSibling;
         // accessor Element* previousElementSibling;
-    // Text
-        // not implemented struct Node* assignedSlot;
-} Text;
+    // Comment
+} Comment;
 
-Text* create_Text(char* baseURI, char* text);
+Comment* create_Comment(char* baseURI, char* text);
 
 
 #endif

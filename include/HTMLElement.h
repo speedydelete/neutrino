@@ -1,11 +1,11 @@
 
-#ifndef INCLUDE_Element
-#define INCLUDE_Element
+#ifndef INCLUDE_HTMLElement
+#define INCLUDE_HTMLElement
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "map.h"
-#include "vector.h"
 
 #include "Event.h"
 #include "Node.h"
@@ -13,34 +13,7 @@
 #include "Document.h"
 
 
-typedef struct NamedNodeMap {
-    int length;
-    map* map;
-} NamedNodeMap;
-
-NamedNodeMap* create_NamedNodeMap(void);
-void free_NamedModeMap(NamedNodeMap* map);
-Attr* NamedNodeMap_getNamedItem(NamedNodeMap* map, char* item);
-void NamedNodeMap_setNamedItem(NamedNodeMap* map, Attr* attr);
-void NamedNodeMap_removeNamedItem(NamedNodeMap* map, char* item);
-
-
-typedef struct HTMLCollection {
-    vector* vector;
-    int length;
-} HTMLCollection;
-
-HTMLCollection* create_HTMLCollection(void);
-void free_HTMLCollection(HTMLCollection* collection);
-struct Element* HTMLCollection_item(HTMLCollection* collection, int i);
-
-
-typedef struct DOMTokenList {
-    void* x;
-} DOMTokenList;
-
-
-typedef struct Element {
+typedef struct HTMLElement {
     // EventTarget
         map* _listeners;
         EventTarget* _parent;
@@ -90,7 +63,42 @@ typedef struct Element {
         // not_implemented void* shadowRoot;
         // not_implemented char* slot;
         // accessor char* tagName;
-} Element;
+    // HTMLElement
+        char* accessKey;
+        char* accessKeyLabel;
+        void* attributeStyleMap;
+        char* autocapitalize;
+        bool autofocus;
+        bool autocorrect;
+        char* contenteditable;
+        void* dataset;
+        char* dir;
+        bool draggable;
+        void* editContext;
+        char* enterKeyHint;
+        bool hidden;
+        bool inert;
+        char* innerText;
+        char* inputMode;
+        bool isContentEditable;
+        char* lang;
+        char* nonce;
+        double offsetHeight;
+        double offsetLeft;
+        Element* offsetParent;
+        double offsetTop;
+        double offsetWidth;
+        char* outerText;
+        char* popover;
+        bool spellcheck;
+        void* style;
+        long tabIndex;
+        char* title;
+        bool translate;
+        bool writingSuggestions;
+} HTMLElement;
+
+HTMLElement* create_HTMLElement(char* baseURI, char* name);
 
 
 #endif

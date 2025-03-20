@@ -2,6 +2,10 @@
   "name": "neutrino-builder",
   "version": "0.1.0",
   "description": "",
+  "license": "MIT",
+  "author": "speedydelete",
+  "type": "commonjs",
+  "main": "jslib/index.js",
   "homepage": "https://github.com/speedydelete/neutrino#readme",
   "bugs": {
     "url": "https://github.com/speedydelete/neutrino/issues"
@@ -10,11 +14,15 @@
     "type": "git",
     "url": "git+https://github.com/speedydelete/neutrino.git"
   },
-  "license": "MIT",
-  "author": "speedydelete",
-  "type": "commonjs",
-  "main": "lib/index.js",
+  "dependencies": {
+    "@babel/parser": "^7.26.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "@babel/types": "^7.26.10"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "compile": "node jslib/cli.js"
   }
 }

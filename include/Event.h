@@ -40,8 +40,8 @@ void Event_stopImmediatePropagation(Event* event);
 
 typedef struct EventTarget {
     // EventTarget
-    map* listeners;
-    struct EventTarget* _parent;
+        map* _listeners;
+        struct EventTarget* _parent;
 } EventTarget;
 
 EventTarget* create_EventTarget(EventTarget* out);

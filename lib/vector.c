@@ -79,7 +79,7 @@ void vector_remove(vector* vector, void* value) {
     struct vector* prev = vector;
     vector = vector->next;
     while (vector != NULL) {
-        if (vector->value = value) {
+        if (vector->value == value) {
             prev->next = vector->next;
             return;
         }

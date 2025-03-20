@@ -12,28 +12,28 @@
 
 typedef struct CharacterData {
     // EventTarget
-    map* listeners;
-    EventTarget* _parent;
+        map* _listeners;
+        EventTarget* _parent;
     // Node
-    char* baseURI;
-    NodeList* childNodes;
-    struct Node* firstChild;
-    bool isConnected;
-    struct Node* lastChild;
-    struct Node* nextSibling;
-    char* nodeName;
-    NodeType nodeType;
-    char* nodeValue;
-    Document* ownerDocument;
-    struct Node* parentNode;
-    Element* parentElement;
-    struct Node* previousSibling;
-    char* textContent;
+        // accessor char* baseURI;
+        // accessor NodeList* childNodes;
+        struct Node* firstChild;
+        bool isConnected;
+        struct Node* lastChild;
+        struct Node* nextSibling;
+        char* nodeName;
+        NodeType nodeType;
+        char* nodeValue;
+        Document* ownerDocument;
+        struct Node* parentNode;
+        // accessor Element* parentElement;
+        struct Node* previousSibling;
+        // accessor char* textContent;
     // CharacterData
-    char* data;
-    int length;
-    Element* nextElementSibling;
-    Element* previousElementSibling;
+        char* data;
+        // accessor int length;
+        // accessor Element* nextElementSibling;
+        // accessor Element* previousElementSibling;
 } CharacterData;
 
 CharacterData* create_CharacterData(CharacterData* out, char* baseURI, char* nodeName, NodeType nodeType, char* data);
