@@ -62,6 +62,11 @@ struct Element* HTMLCollection_item(HTMLCollection* collection, int i) {
 }
 
 
+typedef struct DOMTokenList {
+    void* x;
+} DOMTokenList;
+
+
 typedef struct Element {
     // EventTarget
     map* listeners;

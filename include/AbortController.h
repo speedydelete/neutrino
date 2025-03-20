@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_ABORT_CONTROLLER_H
-#define INCLUDE_ABORT_CONTROLLER_H
+#ifndef INCLUDE_AbortController
+#define INCLUDE_AbortController
 
 #include <stdlib.h>
 

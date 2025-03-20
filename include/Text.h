@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_TEXT_H
-#define INCLUDE_TEXTH
+#ifndef INCLUDE_Text
+#define INCLUDE_Text
 
 #include "Node.h"
 #include "CharacterData.h"

@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_MAP_H
-#define INCLUDE_MAP_H
+#ifndef INCLUDE_map
+#define INCLUDE_map
 
 #include <stdlib.h>
 #include <string.h>

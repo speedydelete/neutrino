@@ -36,6 +36,9 @@ typedef struct CharacterData {
 } CharacterData;
 
 CharacterData* create_CharacterData(CharacterData* out, char* baseURI, char* nodeName, NodeType nodeType, char* data) {
+    if (out == NULL) {
+        out = malloc(sizeof(CharacterData));
+    }
     create_Node(out, baseURI, nodeName, nodeType, data);
     out->length = strlen(data);
     out->data = malloc(out->length);

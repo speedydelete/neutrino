@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_ELEMENT_H
-#define INCLUDE_ELEMENT_H
+#ifndef INCLUDE_Element
+#define INCLUDE_Element
 
 #include <stdlib.h>
 
@@ -33,6 +33,11 @@ typedef struct HTMLCollection {
 HTMLCollection* create_HTMLCollection(void);
 void free_HTMLCollection(HTMLCollection* collection);
 struct Element* HTMLCollection_item(HTMLCollection* collection, int i);
+
+
+typedef struct DOMTokenList {
+    void* x;
+} DOMTokenList;
 
 
 typedef struct Element {

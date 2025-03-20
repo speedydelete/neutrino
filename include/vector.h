@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_VECTOR_H
-#define INCLUDE_VECTOR_H
+#ifndef INCLUDE_vector
+#define INCLUDE_vector
 
 
 typedef struct vector {

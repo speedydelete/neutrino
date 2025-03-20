@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_EVENT_H
-#define INCLUDE_EVENT_H
+#ifndef INCLUDE_Event
+#define INCLUDE_Event
 
 #define _POSIX_C_SOURCE 1999309L
 #include <stdlib.h>

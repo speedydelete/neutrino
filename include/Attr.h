@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_ATTR_H
-#define INCLUDE_ATTR_H
+#ifndef INCLUDE_Attr
+#define INCLUDE_Attr
 
 #include <stdbool.h>
 

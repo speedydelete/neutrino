@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_CHARACTER_DATA_H
-#define INCLUDE_CHARACTER_DATA_H
+#ifndef INCLUDE_CharacterData
+#define INCLUDE_CharacterData
 
 #include <stdlib.h>
 #include <stdbool.h>

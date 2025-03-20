@@ -1,6 +1,6 @@
 
-#ifndef INCLUDE_NODE_H
-#define INCLUDE_NODE_H
+#ifndef INCLUDE_Node
+#define INCLUDE_Node
 
 #include <stdlib.h>
 
