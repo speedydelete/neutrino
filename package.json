@@ -18,11 +18,11 @@
     "@babel/parser": "^7.26.10"
   },
   "devDependencies": {
-    "typescript": "^5.8.2",
-    "@babel/types": "^7.26.10"
+    "@babel/types": "^7.26.10",
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
   },
   "scripts": {
-    "build": "tsc",
-    "compile": "node jslib/cli.js"
+    "build": "tsc"
   }
 }

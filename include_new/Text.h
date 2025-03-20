@@ -13,8 +13,8 @@ typedef struct Text {
         map* _listeners;
         EventTarget* _parent;
     // Node
-        char* baseURI;
-        NodeList* childNodes;
+        // accessor char* baseURI;
+        // accessor NodeList* childNodes;
         struct Node* firstChild;
         bool isConnected;
         struct Node* lastChild;
@@ -24,16 +24,16 @@ typedef struct Text {
         char* nodeValue;
         Document* ownerDocument;
         struct Node* parentNode;
-        Element* parentElement;
+        // accessor Element* parentElement;
         struct Node* previousSibling;
-        char* textContent;
+        // accessor char* textContent;
     // CharacterData
         char* data;
-        int length;
-        Element* nextElementSibling;
-        Element* previousElementSibling;
+        // accessor int length;
+        // accessor Element* nextElementSibling;
+        // accessor Element* previousElementSibling;
     // Text
-        struct Node* assignedSlot;
+        // not implemented struct Node* assignedSlot;
 } Text;
 
 Text* create_Text(char* baseURI, char* text);

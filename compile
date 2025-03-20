@@ -1,0 +1,3 @@
+#!/bin/sh
+node jslib/cli.js app $1 app.c
+gcc -Wall -Werror -Wpedantic -I include app.c

@@ -30,7 +30,7 @@ export type Tag = HTMLTag | Doctype | TagComment | string;
 
 
 const COMMENT_REGEX = /<--(.*?)-->/
-const TAG_REGEX = /<(\/?)(!?[a-zA-Z][a-zA-Z0-9-]*)(\s+(?:[^<>"]+|"(?:\\.|[^"])*"|'(?:\\.|[^'])*')*)?\s*\/?>/;
+const TAG_REGEX = /<(\/?)(!?[a-zA-Z][a-zA-Z0-9-]*)((?:\s+(?:[^<>"]+|"(?:\\.|[^"])*"|'(?:\\.|[^'])*')*)?)\s*\/?>/;
 const ATTR_REGEX = /([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*["']((?:\\.|[^"\\])*?)["']/g;
 const DQ_ESC_REGEX = /(?<!\\)\\"/g;
 const SQ_ESC_REGEX = /(?<!\\)\\'/g;
@@ -67,10 +67,8 @@ function tokenize(code: string): TokenList {
                     let key = x[1];
                     let value = x[2];
                     if ((value.startsWith('"') && value.endsWith('"'))) {
-                        // @ts-ignore
                         value = value.slice(1, -1).replaceAll(DQ_ESC_REGEX, '"');
                     } else if ((value.startsWith("'") && value.endsWith("'"))) {
-                        // @ts-ignore
                         value = value.slice(1, -1).replaceAll(SQ_ESC_REGEX, "'");
                     }
                     return [key, value];
@@ -89,7 +87,7 @@ function tokenize(code: string): TokenList {
 }
 
 function getTags(tags: TokenList): Tag[] {
-    let stack: [TagToken, Tag[]][] = [];
+    let stack: [TagToken | null, Tag[]][] = [];
     let currentTag: TagToken | null = null;
     let content: Tag[] = [];
     for (let tag of tags) {
@@ -97,14 +95,16 @@ function getTags(tags: TokenList): Tag[] {
             content.push(tag);
         } else {
             if (tag.closing) {
-                let newTag: Tag = {
-                    type: 'tag',
-                    name: currentTag.name,
-                    attrs: currentTag.attrs,
-                    content,
-                };
-                [currentTag, content] = stack.pop();
-                content.push(newTag);
+                if (currentTag !== null) {
+                    let newTag: Tag = {
+                        type: 'tag',
+                        name: currentTag.name,
+                        attrs: currentTag.attrs,
+                        content,
+                    };
+                    [currentTag, content] = stack.pop();
+                    content.push(newTag);
+                }
             } else if (tag.name.toUpperCase().startsWith('!DOCTYPE')) {
                 content.push({
                     type: 'doctype',
@@ -113,6 +113,7 @@ function getTags(tags: TokenList): Tag[] {
             } else {
                 stack.push([currentTag, content]);
                 currentTag = tag;
+                content = [];
             }
         }
     }

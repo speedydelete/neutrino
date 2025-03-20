@@ -10,6 +10,7 @@
 #include "Event.h"
 #include "Node.h"
 #include "Element.h"
+#include "HTMLElement.h"
 
 
 typedef struct DocumentType {
@@ -45,8 +46,8 @@ typedef struct Document {
         map* _listeners;
         EventTarget* _parent;
     // Node
-        // accessor char* baseURI;
-        // accessor NodeList* childNodes;
+        char* baseURI;
+        NodeList* childNodes;
         struct Node* firstChild;
         bool isConnected;
         struct Node* lastChild;
@@ -56,54 +57,54 @@ typedef struct Document {
         char* nodeValue;
         Document* ownerDocument;
         struct Node* parentNode;
-        // accessor Element* parentElement;
+        Element* parentElement;
         struct Node* previousSibling;
-        // accessor char* textContent;
+        char* textContent;
     // Document
-        // accessor Element* activeElement;
-        // not implemented void* adoptedStyleSheets;
-        // accessor Element* body;
-        // accessor char* characterSet;
-        // accessor int childElementCount;
-        // accessor Element* children;
-        // accessor char* compatMode;
+        Element* activeElement;
+        void* adoptedStyleSheets;
+        Element* body;
+        char* characterSet;
+        int childElementCount;
+        Element* children;
+        char* compatMode;
         char* contentType;
-        // accessor Element* currentScript;
-        // accessor DocumentType* doctype;
-        // accessor Element* documentElement;
-        // accessor char* documentURI;
-        // accessor HTMLCollection* embeds;
-        // accessor Element* firstElementChild;
-        // not implemented void* fontFaceSet;
-        // accessor HTMLCollection* forms;
-        // accessor bool fragmentDirective;
-        // accessor Element* fullscreenElement;
-        // accessor Element* head;
-        // not implemented bool hidden;
-        // accessor HTMLCollection* images;
-        // not implemented void* implementation;
-        // accessor Element* lastElementChild;
-        // accessor HTMLCollection* links;
-        // not implemented Elemnet* pictureInPictureElement;
-        // not implemented bool pictureInPictureEnabled;
-        // accessor HTMLCollection* plugins;
-        // not implemented Element* pointerLockElement;
-        // not implemented bool prerendering;
-        // accessor HTMLCollection* scripts;
-        // not implemented Element* scrollingElement;
-        // not implemented void* styleSheets;
-        // not implemented void* timeline;
-        // not implemented char* visibilityState;
-        // not implemented char* cookie;
-        // not implemented void* defaultView;
-        // not implemented char* designMode;
-        // not implemented char* dir;
-        // not implemented bool fullscreenEnabled;
-        // not implemented char* lastModified;
-        // not implemented void* location;
-        // accessor char* readyState;
+        Element* currentScript;
+        DocumentType* doctype;
+        Element* documentElement;
+        char* documentURI;
+        // HTMLCollection* embeds;
+        Element* firstElementChild;
+        void* fontFaceSet;
+        // HTMLCollection* forms;
+        bool fragmentDirective;
+        Element* fullscreenElement;
+        Element* head;
+        bool hidden;
+        // HTMLCollection* images;
+        void* implementation;
+        Element* lastElementChild;
+        // HTMLCollection* links;
+        Element* pictureInPictureElement;
+        bool pictureInPictureEnabled;
+        // HTMLCollection* plugins;
+        Element* pointerLockElement;
+        bool prerendering;
+        // HTMLCollection* scripts;
+        Element* scrollingElement;
+        void* styleSheets;
+        void* timeline;
+        char* visibilityState;
+        char* cookie;
+        void* defaultView;
+        char* designMode;
+        char* dir;
+        bool fullscreenEnabled;
+        char* lastModified;
+        void* location;
+        char* readyState;
         char* referrer;
-        // accessor char* title;
+        char* title;
         char* URL;
 } Document;
 

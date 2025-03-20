@@ -15,8 +15,8 @@ typedef struct Attr {
         map* _listeners;
         EventTarget* _parent;
     // Node
-        char* baseURI;
-        NodeList* childNodes;
+        // accessor char* baseURI;
+        // accessor NodeList* childNodes;
         struct Node* firstChild;
         bool isConnected;
         struct Node* lastChild;
@@ -26,15 +26,15 @@ typedef struct Attr {
         char* nodeValue;
         Document* ownerDocument;
         struct Node* parentNode;
-        Element* parentElement;
+        // accessor Element* parentElement;
         struct Node* previousSibling;
-        char* textContent;
+        // accessor char* textContent;
     // Attr
-        char* localName;
+        // not implemented char* localName;
         char* name;
-        char* namespaceURI;
-        Element* ownerElement;
-        char* prefix;
+        // not implemented char* namespaceURI;
+        // accessor Element* ownerElement;
+        // not implemented char* prefix;
         char* value;
 } Attr;
 

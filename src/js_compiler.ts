@@ -3,7 +3,7 @@ import * as parser from '@babel/parser';
 import type * as t from '@babel/types';
 
 
-export function getCString(text: string) {
+export function getCString(text: string): string {
     let out = '';
     for (let char of text) {
         let code = char.charCodeAt(0);
@@ -17,9 +17,9 @@ export function getCString(text: string) {
 }
 
 
-function compileType(node: t.TSType): string {
+// function compileType(node: t.TSType): string {
 
-}
+// }
 
 
 function compile(node: t.Node | null | undefined | (t.Node | null | undefined)[]): string {
@@ -91,7 +91,7 @@ function compile(node: t.Node | null | undefined | (t.Node | null | undefined)[]
             if (!declaration.id.typeAnnotation) {
                 throw new Error('variable declarations must have a type');
             }
-            out += compileType(declaration.id.typeAnnotation)
+            // out += compileType(declaration.id.typeAnnotation)
         }
         if (node.kind === 'const') {
             out = out.map(x => 'const ' + x);
@@ -113,8 +113,6 @@ function compile(node: t.Node | null | undefined | (t.Node | null | undefined)[]
         return compile(node.test) + '?' + compile(node.consequent) + ':' + compile(node.alternate);
     } else if (node.type === 'CallExpression') {
         return compile(node.callee) + '(' + node.arguments.map(compile).join(',') + ')';
-    } else if (node.type === 'TemplateLiteral') {
-        return node.a
     } else {
         throw new Error(`nodes of type ${node.type} are not supported`);
     }

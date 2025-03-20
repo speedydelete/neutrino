@@ -29,7 +29,7 @@ function compileTags(tags: Tag[], elt: string = 'document'): string {
             out += `Node_appendChild(${elt}, Document_createComment(document,${getCString(tag.text)}))`;
         } else {
             let name = getVar();
-            out += `${name}=Document_createElement(document,${tag.name});`;
+            out += `Element*${name}=Document_createElement(document,${getCString(tag.name)});`;
             for (let key in tag.attrs) {
                 out += `Node_appendChild(${name}, Document_createAttr(document,${getCString(key)},${getCString(tag.attrs[key])}));`;
             }

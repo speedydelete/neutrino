@@ -38,8 +38,8 @@ typedef struct Node {
         map* _listeners;
         EventTarget* _parent;
     // Node
-        char* baseURI;
-        NodeList* childNodes;
+        // accessor char* baseURI;
+        // accessor NodeList* childNodes;
         struct Node* firstChild;
         bool isConnected;
         struct Node* lastChild;
@@ -49,9 +49,9 @@ typedef struct Node {
         char* nodeValue;
         Document* ownerDocument;
         struct Node* parentNode;
-        Element* parentElement;
+        // accessor Element* parentElement;
         struct Node* previousSibling;
-        char* textContent;
+        // accessor char* textContent;
 } Node;
 
 Node* create_Node(Node* node, char* baseURI, char* nodeName, NodeType nodeType, char* nodeValue);
