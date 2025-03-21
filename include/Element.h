@@ -56,7 +56,7 @@ typedef struct Element {
         char* nodeValue;
         Document* ownerDocument;
         struct Node* parentNode;
-        Element* parentElement;
+        struct Element* parentElement;
         struct Node* previousSibling;
         char* textContent;
     // Element

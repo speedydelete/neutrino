@@ -11,6 +11,7 @@ export {compile as compileHTML} from './html_compiler';
 let template = fs.readFileSync('lib/template.c').toString();
 
 export function compile(appName: string, file: string, out: string) {
+    console.log(appName, file, out);
     let code = fs.readFileSync(file).toString();
     code = 'void create(void){' + compileHTML(code) + '}';
     let defs = `#define APP_NAME ${getCString(appName)}`;

@@ -19,9 +19,9 @@ function compileTags(tags: Tag[], elt: string = 'document'): string {
         } else if (tag.type === 'doctype') {
             let args: string;
             if (tag.dtd === 'html') {
-                args = '"html", "", ""';
+                args = '"html","",""';
             } else {
-                args = `"", ${getCString(tag.dtd)}, ""`;
+                args = `"",${getCString(tag.dtd)},""`;
             }
             out += `Node_appendChild((Node*)${elt},(Node*)create_DocumentType(${args})});`
         } else if (tag.type === 'comment') {

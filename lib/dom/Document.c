@@ -134,6 +134,10 @@ HTMLElement* Document_createElement(Document* document, char* name) {
     return out;
 }
 
+Attr* Document_createAttr(Document* document, char* name, char* value) {
+    Attr* out = create_Attr(document->baseURI)
+}
+
 Text* Document_createTextNode(Document* document, char* text) {
     Text* out = create_Text(document->baseURI, text);
     out->ownerDocument = document;

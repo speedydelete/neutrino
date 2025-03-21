@@ -10,6 +10,9 @@
 #include "Event.h"
 #include "Node.h"
 #include "Element.h"
+#include "Comment.h"
+#include "Attr.h"
+#include "Text.h"
 #include "HTMLElement.h"
 
 
@@ -55,7 +58,7 @@ typedef struct Document {
         char* nodeName;
         NodeType nodeType;
         char* nodeValue;
-        Document* ownerDocument;
+        struct Document* ownerDocument;
         struct Node* parentNode;
         struct Element* parentElement;
         struct Node* previousSibling;

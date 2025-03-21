@@ -1,3 +1,4 @@
 #!/bin/sh
+rm app.c
 node jslib/cli.js app $1 app.c
 gcc -Wall -Werror -Wpedantic -Iinclude $( pkg-config --cflags gtk4 ) app.c $( pkg-config --libs gtk4 )

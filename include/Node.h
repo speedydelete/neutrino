@@ -18,10 +18,10 @@ typedef struct NodeList {
 
 NodeList* create_NodeList(void);
 void free_NodeList(NodeList* list);
-Node* NodeList_item(NodeList* list, int index);
+struct Node* NodeList_item(NodeList* list, int index);
 
 
-typedef enum {
+typedef enum NodeType {
     ELEMENT_NODE = 1,
     ATTRIBUTE_NODE,
     TEXT_NODE,
