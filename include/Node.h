@@ -56,11 +56,7 @@ typedef struct Node {
 
 Node* create_Node(Node* node, char* baseURI, char* nodeName, NodeType nodeType, char* nodeValue);
 void free_Node(Node* node);
-
-char* Node_get_baseURI(Node* node);
-NodeList* Node_get_childNodes(Node* node);
-Element* Node_get_parentElement(Node* node);
-char* Node_get_textContent(Node* node);
+void free_Node_and_children(Node* node);
 
 Node* Node_appendChild(Node* node, Node* child);
 Node* Node_cloneNode(Node* node, bool deep);

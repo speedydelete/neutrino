@@ -73,20 +73,20 @@ EventTarget* create_EventTarget(EventTarget* out) {
     if (out == NULL) {
         out = malloc(sizeof(EventTarget));
     }
-    out->listeners = create_map();
+    out->_listeners = create_map();
     return out;
 }
 
 void free_EventTarget(EventTarget* target) {
-    free_map(target->listeners);
+    free_map(target->_listeners);
 }
 
 void EventTarget_addEventListener(EventTarget* target, char* type, void(*func)(Event)) {
-    map_set_no_replace(target->listeners, type, func);
+    map_set_no_replace(target->_listeners, type, func);
 }
 
 void EventTarget_removeEventListener(EventTarget* target, char* type, void(*func)(Event)) {
-    target->listeners = map_delete_pair(target->listeners, type, func);
+    target->_listeners = map_delete_pair(target->_listeners, type, func);
 }
 
 void EventTarget_dispatchEvent(EventTarget* target, Event* event) {

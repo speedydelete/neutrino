@@ -6,6 +6,7 @@
         "event.h": "c",
         "stdlib.h": "c",
         "document.h": "c",
-        "attr.h": "c"
+        "attr.h": "c",
+        "string.h": "c"
     }
 }

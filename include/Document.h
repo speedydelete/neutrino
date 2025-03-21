@@ -16,10 +16,10 @@
 typedef struct DocumentType {
     // EventTarget
     map* listeners;
-    EventTarget* _parent;
+    struct EventTarget* _parent;
     // Node
     char* baseURI;
-    NodeList* childNodes;
+    struct NodeList* childNodes;
     struct Node* firstChild;
     bool isConnected;
     struct Node* lastChild;
@@ -27,9 +27,9 @@ typedef struct DocumentType {
     char* nodeName;
     NodeType nodeType;
     char* nodeValue;
-    Document* ownerDocument;
+    struct Document* ownerDocument;
     struct Node* parentNode;
-    Element* parentElement;
+    struct Element* parentElement;
     struct Node* previousSibling;
     char* textContent;
     // DocumentType
@@ -57,41 +57,41 @@ typedef struct Document {
         char* nodeValue;
         Document* ownerDocument;
         struct Node* parentNode;
-        Element* parentElement;
+        struct Element* parentElement;
         struct Node* previousSibling;
         char* textContent;
     // Document
-        Element* activeElement;
+        struct Element* activeElement;
         void* adoptedStyleSheets;
-        Element* body;
+        struct Element* body;
         char* characterSet;
         int childElementCount;
-        Element* children;
+        struct Element* children;
         char* compatMode;
         char* contentType;
-        Element* currentScript;
+        struct Element* currentScript;
         DocumentType* doctype;
-        Element* documentElement;
+        struct Element* documentElement;
         char* documentURI;
         // HTMLCollection* embeds;
-        Element* firstElementChild;
+        struct Element* firstElementChild;
         void* fontFaceSet;
         // HTMLCollection* forms;
         bool fragmentDirective;
-        Element* fullscreenElement;
-        Element* head;
+        struct Element* fullscreenElement;
+        struct Element* head;
         bool hidden;
         // HTMLCollection* images;
         void* implementation;
-        Element* lastElementChild;
+        struct Element* lastElementChild;
         // HTMLCollection* links;
-        Element* pictureInPictureElement;
+        struct Element* pictureInPictureElement;
         bool pictureInPictureEnabled;
         // HTMLCollection* plugins;
-        Element* pointerLockElement;
+        struct Element* pointerLockElement;
         bool prerendering;
         // HTMLCollection* scripts;
-        Element* scrollingElement;
+        struct Element* scrollingElement;
         void* styleSheets;
         void* timeline;
         char* visibilityState;
@@ -110,7 +110,7 @@ typedef struct Document {
 
 Attr* Document_createAttribute(Document* document, char* name, char* value);
 Comment* Document_createComment(Document* document, char* data);
-HTMLElement* Document_createElement(Document* document, char* name);
+struct HTMLElement* Document_createElement(Document* document, char* name);
 Text* Document_createTextNode(Document* document, char* text);
 
 

@@ -41,7 +41,7 @@ typedef struct DocumentType {
 
 DocumentType* create_DocumentType(char* baseURI, char* name, char* publicId, char* systemId) {
     DocumentType* out = malloc(sizeof(DocumentType));
-    create_Node(out, baseURI, '#doctype', DOCUMENT_TYPE_NODE, strcat(name, " ", publicId));
+    create_Node(out, baseURI, '#doctype', DOCUMENT_TYPE_NODE, strcat(strcat(name, " "), publicId));
     out->name = name;
     out->publicId = publicId;
     out->systemId = systemId;
@@ -93,7 +93,7 @@ typedef struct Document {
     void* implementation;
     Element* lastElementChild;
     HTMLCollection* links;
-    Elemnet* pictureInPictureElement;
+    Element* pictureInPictureElement;
     bool pictureInPictureEnabled;
     HTMLCollection* plugins;
     Element* pointerLockElement;
@@ -123,7 +123,7 @@ Attr* Document_createAttribute(Document* document, char* name, char* value) {
 }
 
 Comment* Document_createComment(Document* document, char* data) {
-    Comment* out = create_Attr(document->baseURI, data);
+    Comment* out = create_Comment(document->baseURI, data);
     out->ownerDocument = document;
     return out;
 }

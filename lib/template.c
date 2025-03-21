@@ -25,11 +25,11 @@ void create(void);
 
 int main(int argc, char** argv) {
     document = malloc(sizeof(Document));
-    document->baseURI = 'neutrino://index.html';
+    document->baseURI = "neutrino://index.html";
     document->nodeType = DOCUMENT_NODE;
-    document->nodeName = '#document';
+    document->nodeName = "#document";
     create();
     int status = render(argc, argv);
-    free_Node_and_children(document);
+    free_Node_and_children((Node*)document);
     return status;
 }

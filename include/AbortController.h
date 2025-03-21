@@ -3,6 +3,7 @@
 #define INCLUDE_AbortController
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 
 typedef struct AbortSignal {

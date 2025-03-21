@@ -9,6 +9,8 @@ export function getCString(text: string): string {
         let code = char.charCodeAt(0);
         if (code >= 0x20 && code < 0x7F) {
             out += char;
+        } else if (char === '\n') {
+            out += '\\n';
         } else {
             out += '\\u' + code.toString(16).padStart(4, '0');
         }

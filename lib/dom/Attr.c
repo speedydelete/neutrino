@@ -37,7 +37,7 @@ typedef struct Attr {
 
 Attr* create_Attr(char* baseURI, char* name, char* value) {
     Attr* out = malloc(sizeof(Attr));
-    create_Node(out, name, ATTRIBUTE_NODE, value);
+    create_Node(out, baseURI, name, ATTRIBUTE_NODE, value);
     out->localName = name;
     out->namespaceURI = NULL;
     out->prefix = NULL;
