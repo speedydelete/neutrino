@@ -23,7 +23,6 @@ export function getCString(text: string): string {
 
 // }
 
-
 function compile(node: t.Node | null | undefined | (t.Node | null | undefined)[]): string {
     if (!node) {
         return '';
