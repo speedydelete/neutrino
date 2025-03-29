@@ -306,6 +306,9 @@ export class Compiler {
         this.error('TypeError', 'undefined is not a function');
     }
 
+    parseObjectType(node: bt.TSTypeElement[]): Type {
+    }
+
     parseType(node: bt.TSType | bt.Noop | bt.TSTypeAnnotation | bt.TypeAnnotation): Type {
         if (node.type === 'Noop') {
             return t.unknown;
@@ -339,8 +342,12 @@ export class Compiler {
             return t.bigint;
         } else if (node.type === 'TSObjectKeyword') {
             return t.object;
+        } else if (node.type === 'TSThisType') {
+            return this.thisType;
         } else if (node.type === 'TSArrayType') {
             return this.vars.getType('Array').with({T: this.parseType(node.elementType)});
+        } else if (node.type === 'TSTypeLiteral') {
+            return this.parseObjectType(node.members);
         } else if (node.type === 'TSUnionType') {
             return new t.union(...node.types.map(this.parseType));
         } else if (node.type === 'TSIntersectionType') {
@@ -915,7 +922,9 @@ export class Compiler {
             if (node.body.type === 'BlockStatement') {
                 for (let statement of node.body.body) {
                     for (let line of this.compileStatement(statement).split('\n')) {
-                        out += '    ' + line + '\n';
+                        if (line !== '') {
+                            out += '    ' + line + '\n';
+                        }
                     }
                 }
             } else {
@@ -975,6 +984,14 @@ export class Compiler {
                 out.push(...this.compileStatement(statement).split('\n'));
             }
             return start + out.map(line => '    ' + line).join('\n') + '\n}';
+        } else if (node.type === 'TypeAlias') {
+            this.error('SyntaxError', 'Flow is not supported');
+        } else if (node.type === 'TSTypeAliasDeclaration') {
+            this.vars.setType(node.id.name, this.parseType(node.typeAnnotation));
+            return '';
+        } else if (node.type === 'TSInterfaceDeclaration') {
+            this.vars.setType(node.id.name, this.parseObjectType(node.body.body));
+            return '';
         } else {
             throw new Error(`Unrecognized AST node type in compileStatement: ${node.type}`);
         }
