@@ -99,13 +99,53 @@ interface IArguments {
 
 interface Boolean {}
 
+function Boolean(value: any): boolean {
+    return value !== undefined && value !== null && value !== 0 && value === value && value !== '';
+}
+
+
 interface Number {
     toString(): string;
     valueOf(): number;
 }
 
+function Number(value: any): number {
+    if (value === undefined || value === null) {
+        return 0;
+    } else if (typeof value === 'boolean') {
+        return neutrino.c`${value}`;
+    } else if (typeof value === 'number') {
+        return value;
+    } else if (typeof value === 'string') {
+        return parseFloat(value);
+    } else if (typeof value === 'symbol') {
+        throw new TypeError('Cannot convert symbol to number');
+    } else if (typeof value === 'bigint') {
+        throw new TypeError('Cannot convert BigInt to number');
+    } else {
+        return neutrino.c`${Number}(object_to_primitive(value))`;
+    }
+}
+
+
 interface String {
     length: number;
+}
+
+function String(value: any): string {
+    if (value === undefined) {
+        return 'undefined';
+    } else if (value === null) {
+        return 'null';
+    } else if (value === true) {
+        return 'true';
+    } else if (value === false) {
+        return 'false';
+    } else if (typeof value === 'number') {
+        return neutrino.c`itoa(${value})`;
+    } else {
+        return neutrino.c`${String}(object_to_primitive(value))`;
+    }
 }
 
 
@@ -126,4 +166,40 @@ declare var Array: ArrayConstructor;
 interface TemplateStringsArray extends Array<string> {}
 
 
+function parseInt(value: string): number {
+    return neutrino.c`atoi(${value})`;
+}
+
+function parseFloat(value: string): number {
+    return neutrino.c`atof(${value})`;
+}
+
+
 interface RegExp {}
+
+
+class Error {
+    type: string;
+    message: string;
+    constructor(message?: string) {
+        this.type = 'Error';
+        this.message = message ?? '';
+    }
+    toString() {
+        return `${this.type}: ${this.message}`;
+    }
+}
+
+class ReferenceError extends Error {
+    constructor(message?: string) {
+        super(message);
+        this.type = 'ReferenceError';
+    }
+}
+
+class TypeError extends Error {
+    constructor(message?: string) {
+        super(message);
+        this.type = 'TypeError';
+    }
+}

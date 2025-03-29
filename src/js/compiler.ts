@@ -432,6 +432,8 @@ export class Compiler {
                         code = `${left} == ${right}`;
                     } else if (leftType.type === 'string') {
                         code = `strcmp(${left}, ${right}) != 0`;
+                    } else if (leftType.type === 'undefined' || leftType.type === 'null') {
+                        code = 'true';
                     } else {
                         this.error('TypeError', `Unsupported operand type for equality: ${leftType.type}`);
                     }
@@ -630,9 +632,8 @@ export class Compiler {
             }
         } else if (node.type === 'SwitchStatement') {
             let out = 'switch (' + this.compileExpression(node.discriminant) + ') {';
-            for (let subCase of node.cases) {
-                if (subCase === '')
-            }
+            // todo: finish this
+            return out;
         } else {
             throw new Error(`Unrecognized AST node type in compileStatement: ${node.type}`);
         }

@@ -28,6 +28,9 @@ export type Type = TypeClass | typeof TypeClass;
 export class any_ extends TypeClass {
     type: 'any';
     static type: 'any';
+    extends(other: Type): boolean {
+        return true;
+    }
     doesExtend(other: Type): boolean {
         return true;
     }
