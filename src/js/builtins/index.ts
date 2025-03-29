@@ -1,6 +1,5 @@
 
 declare var neutrino: {
-    c(code: string): any;
     c(strings: string[], ...parts: any): any;
     compiledFunctionName: string;
     currentFunction: Function;
@@ -30,7 +29,8 @@ interface ObjectConstructor {
     (value: any): object;
     new (value: any): object;
     prototype: Object;
-    assign(target: object, ...values: object[]): object;
+    assign<T extends object, U extends object>(target: T, value1: U): T & U;
+    assign<T extends object, U extends object, V extends object>(target: T, value1: U, value2: V): T & U & V;
     create(proto: object | null): object;
     entries(obj: object): [PropertyKey, any][];
     fromEntries(iterable: [PropertyKey, any][]): object;
@@ -54,14 +54,9 @@ var Object: ObjectConstructor = function(value: any): object {
             return neutrino.c`create_object(get_key(${Object}, "prototype"))`;
         } else if (neutrino.isObject(value)) {
             return value;
-        } else if (typeof value === 'boolean') {
-            return new Boolean(value);
-        } else if (typeof value === 'number') {
-            return new Number(value);
-        } else if (typeof value === 'string') {
-            return new String(value);
         } else {
-            throw new TypeError(`Cannot convert ${typeof value} to an object`);
+            // @ts-ignore
+            return value;
         }
     }
 }
@@ -85,54 +80,12 @@ Object.prototype = {
     },
 };
 
-Object.assign = function(target, ...values) {
-    for (let i = 0; i < values.length; i++) {
-        let value = values[i];
-        for (let key in value) {
-            // @ts-ignore
-            target[key] = value[key];
-        }
-    }
-}
-
-
-interface FunctionConstructor {
-    new (...args: any): Function;
-    prototype: Function;
-}
-
-type Parameters<T extends (...args: any[]) => any> = T extends (...args: infer U) => any ? U : any;
-type ReturnType<T extends (...args: any[]) => any> = T extends (...args: any[]) => infer U ? U : any;
 
 interface Function extends Object {
     (...args: any[]): any;
     new (...args: any[]): any;
-    constructor: FunctionConstructor;
     prototype: object;
-    apply(thisArg: any, args: Parameters<this>): ReturnType<this>;
-    bind<T>(thisArg: T): (this: T, ...args: Parameters<this>) => ReturnType<this>;
-    call<T>(thisArg: T, ...args: Parameters<this>): ReturnType<this>;
 }
-
-var Function: FunctionConstructor = {
-    // @ts-ignore
-    prototype: {
-        prototype: {},
-        apply(thisArg, args) {
-            return neutrino.callFunction(neutrino.currentFunction, thisArg, args);
-        },
-        bind(thisArg) {
-            let func = neutrino.currentFunction;
-            return function(...args) {
-                return neutrino.callFunction(func, thisArg, args);
-            }
-        },
-        call(thisArg, ...args) {
-            return neutrino.callFunction(neutrino.currentFunction, thisArg, args);
-        }
-    },
-};
-Function.prototype.constructor = Function;
 
 type CallableFunction = Function;
 type NewableFunction = Function;
@@ -144,108 +97,33 @@ interface IArguments {
 }
 
 
-interface Boolean {
-    constructor: BooleanConstructor;
-}
-
-interface BooleanConstructor extends Function {
-    (value: any): boolean;
-    new (value: any): Boolean;
-    prototype: Boolean;
-}
-
-// @ts-ignore
-var Boolean: BooleanConstructor = function(this: Boolean, value) {
-    if (new.target) {
-        this.constructor = Boolean;
-    } else {
-        return !!value;
-    }
-}
-
-Boolean.prototype = {
-    constructor: Boolean,
-};
-
+interface Boolean {}
 
 interface Number {
-    constructor: NumberConstructor;
+    toString(): string;
+    valueOf(): number;
 }
-
-interface NumberConstructor extends Function {
-    (value: any): number;
-    new (value: any): Number;
-    prototype: Number;
-}
-
-// @ts-ignore
-var Number: BooleanConstructor = function(this: Number, value) {
-    if (new.target) {
-        this.constructor = Number;
-    } else {
-        return 0 + value;
-    }
-}
-
-Number.prototype = {
-    constructor: Number,
-};
-
 
 interface String {
-    constructor: StringConstructor;
     length: number;
 }
 
-interface StringConstructor extends Function {
-    (value: any): string;
-    new (value: any): String;
-    prototype: String;
-}
 
-// @ts-ignore
-var String: StringConstructor = function(this: String, value) {
-    if (new.target) {
-        this.constructor = String;
-    } else {
-        return 0 + value;
-    }
-}
-
-String.prototype = {
-    constructor: String,
-    wrappedPrimitive: string;
-    get length() {
-        return ``;
-    }
-};
-
-
-interface Array<T> extends Object {
+interface Array<T> {
     [index: number]: T;
     length: number;
+    constructor: ArrayConstructor;
 }
 
 interface ArrayConstructor {
+    (length: number): Array<undefined>;
     <T>(...values: T[]): Array<T>;
-    new <T>(...values: T[]): Array<T>;
-    prototype: {
-        constructor: ArrayConstructor;
-    };
+    new<T>(...values: T[]): Array<T>;
 }
 
-// @ts-ignore
-var Array: ArrayConstructor = function<T>(this: Array<T>, ...values: T[]) {
-    if (!new.target) {
-        return new Array(...values);
-    } else {
-        if (values.length === 1 && typeof values[0] === 'number') {
-            return neutrino.c`create_array_of_length(${values[0]})`;
-        } else {
-            return neutrino.c`create_array(${values.length}, ${values.join(',')})`
-        }
-    }
-}
-Array.prototype = {
-    constructor: Array,
-};
+declare var Array: ArrayConstructor;
+
+interface TemplateStringsArray extends Array<string> {}
+
+
+interface RegExp {}

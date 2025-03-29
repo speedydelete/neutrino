@@ -242,14 +242,26 @@ export class Compiler {
 
     compilePrimitivePropertyAccess(value: string, type: Type, prop: string): [string, Type] {
         if (type.extends(t.undefined) || type.extends(t.null)) {
-            this.error('TypeError', `Cannot read properties of ${type.type} (reading '${prop}')`);
+            this.error('TypeError', `Cannot read properties of ${type.type} (reading '${prop}')`);            
+        } else if (type.extends(t.string)) {
+            if (prop === 'length') {
+                return [`strlen(${value})`, t.string];
+            }
         }
+        return ['NULL', t.undefined];
     }
 
-    compilePrimitiveMethodCall(value: string, type: Type, func: string, args: [string, Type][]): [string, Type] {
+    compilePrimitiveMethodCall(value: string, type: Type, method: string, args: [string, Type][]): [string, Type] {
         if (type.extends(t.undefined) || type.extends(t.null)) {
-            this.error('TypeError', `Cannot read properties of ${type.type} (reading '${prop}')`);
+            this.error('TypeError', `Cannot read properties of ${type.type} (reading '${method}')`);
+        } else if (type.extends(t.number)) {
+            if (method === 'toString') {
+                return [`Number_toString(${value})`, t.string];
+            } else if (method === 'valueOf') {
+                return [value, t.number];
+            }
         }
+        this.error('TypeError', 'undefined is not a function');
     }
 
     compileExpression(node: bt.Expression | bt.PrivateName | bt.V8IntrinsicIdentifier): [string, Type] {
@@ -264,6 +276,8 @@ export class Compiler {
             return ['NULL', t.null];
         } else if (node.type === 'StringLiteral') {
             return [this.compileString(node.value), new t.string(node.value)];
+        } else if (node.type === 'BooleanLiteral') {
+            return [node.value ? 'true' : 'false', new t.boolean(node.value)];
         } else if (node.type === 'NumericLiteral') {
             let value = node.value.toString();
             if (!value.includes('.')) {
@@ -536,6 +550,45 @@ export class Compiler {
             } else {
                 this.error('TypeError', `Object of type ${calleeType.type} is not callable`);
             }
+        } else if (node.type === 'SequenceExpression') {
+            let exprs = node.expressions.map(this.compileExpression);
+            return [exprs.map(expr => expr[0]).join(', '), exprs[exprs.length - 1][1]];
+        } else if (node.type === 'ParenthesizedExpression') {
+            let expr = this.compileExpression(node.expression);
+            return ['(' + expr[0] + ')', expr[1]];
+        } else if (node.type === 'DoExpression') {
+            this.error('SyntaxError', 'Do statements are not supported');
+        } else if (node.type === 'ModuleExpression') {
+            this.error('SyntaxError', 'Module expressions are not supported');
+        } else if (node.type === 'TopicReference') {
+            this.error('SyntaxError', 'Hack-style pipes are not supported');
+        } else if (node.type === 'TemplateLiteral') {
+            let out: string[] = [];
+            for (let i = 0; i < node.quasis.length; i++) {
+                out.push(node.quasis[i / 2].value.raw);
+                if (i !== node.quasis.length - 1) {
+                    out.push(`String(${this.compileExpression(node.expressions[i / 2 - 1] as bt.Expression)[0]})`);
+                }
+            }
+            return [`default_template_tag(${out.length}, ${out.join(', ')})`, t.string];
+        } else if (node.type === 'TaggedTemplateExpression') {
+            let out: string[] = [];
+            let {quasi, tag} = node;
+            for (let i = 0; i < quasi.quasis.length; i++) {
+                out.push(quasi.quasis[i].value.raw);
+                if (i !== quasi.quasis.length - 1) {
+                    out.push(this.compileExpression(quasi)[0]);
+                }
+            }
+            if (tag.type === 'MemberExpression' && tag.object.type === 'Identifier' && tag.object.name === 'neutrino' && tag.property.type === 'Identifier' && tag.property.name === 'c') {
+                return [out.join(''), t.any];
+            } else {
+                let [tagCode, tagType] = this.compileExpression(tag);
+                if (!(tagType instanceof t.object) || tagType.returnType === null) {
+                    this.error('TypeError', 'Is not callable');
+                }
+                return [tagCode + '(' + out.join(', ') + ')', tagType.returnType];
+            }
         } else {
             throw new Error(`Unrecognized AST node type in compileExpression: ${node.type}`);
         }
@@ -543,7 +596,46 @@ export class Compiler {
 
     compileStatement(node: bt.Statement): string {
         this.currentNode = node;
-        return '';
+        if (node.type === 'ExpressionStatement') {
+            return this.compileExpression(node.expression)[0];
+        } else if (node.type === 'BlockStatement') {
+            this.pushScope();
+            let out = '';
+            for (let statement of node.body) {
+                out += this.compileStatement(statement)[0];
+            }
+            this.popScope();
+            return out;
+        } else if (node.type === 'EmptyStatement') {
+            return ';';
+        } else if (node.type === 'DebuggerStatement') {
+            return ';';
+        } else if (node.type === 'WithStatement') {
+            this.error('SyntaxError', 'The with statement is not supported');
+        } else if (node.type === 'ReturnStatement') {
+            return 'return ' + (node.argument ? this.compileExpression(node.argument)[0] : '') + ';';
+        } else if (node.type === 'LabeledStatement') {
+            return node.label.name + ': ' + this.compileStatement(node.body);
+        } else if (node.type === 'BreakStatement') {
+            if (!node.label) {
+                return 'break;';
+            } else {
+                return 'goto ' + node.label.name + ';';
+            }
+        } else if (node.type === 'ContinueStatement') {
+            if (!node.label) {
+                return 'continue;';
+            } else {
+                return 'goto ' + node.label.name + ';';
+            }
+        } else if (node.type === 'SwitchStatement') {
+            let out = 'switch (' + this.compileExpression(node.discriminant) + ') {';
+            for (let subCase of node.cases) {
+                if (subCase === '')
+            }
+        } else {
+            throw new Error(`Unrecognized AST node type in compileStatement: ${node.type}`);
+        }
     }
 
     compile() {
