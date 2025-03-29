@@ -25,6 +25,21 @@ interface Object {
     valueOf(): any;
 }
 
+interface Function extends Object {
+    (...args: any[]): any;
+    new (...args: any[]): any;
+    prototype: object;
+}
+
+type CallableFunction = Function;
+type NewableFunction = Function;
+
+interface IArguments {
+    [index: number]: any;
+    length: number;
+    callee: Function;
+}
+
 interface ObjectConstructor {
     (value: any): object;
     new (value: any): object;
@@ -79,22 +94,6 @@ Object.prototype = {
         return this;
     },
 };
-
-
-interface Function extends Object {
-    (...args: any[]): any;
-    new (...args: any[]): any;
-    prototype: object;
-}
-
-type CallableFunction = Function;
-type NewableFunction = Function;
-
-interface IArguments {
-    [index: number]: any;
-    length: number;
-    callee: Function;
-}
 
 
 interface Boolean {}
@@ -152,16 +151,11 @@ function String(value: any): string {
 interface Array<T> {
     [index: number]: T;
     length: number;
-    constructor: ArrayConstructor;
 }
 
-interface ArrayConstructor {
-    (length: number): Array<undefined>;
-    <T>(...values: T[]): Array<T>;
-    new<T>(...values: T[]): Array<T>;
+function Array<T>(...items: T[]): Array<T> {
+    return items;
 }
-
-declare var Array: ArrayConstructor;
 
 interface TemplateStringsArray extends Array<string> {}
 

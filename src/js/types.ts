@@ -4,6 +4,8 @@ export abstract class TypeClass {
     static type: string;
     typeVars: typevar[] = [];
     static typeVars: typevar[] = [];
+    resolvedTypeVars: typevar[] = [];
+    static resolvedTypeVars: typevar[] = [];
     constructor(...args: unknown[]) {}
     extends(other: Type): boolean {
         return other.doesExtend(this);
@@ -31,10 +33,20 @@ export abstract class TypeClass {
         return this;
     }
     with(typeVars: {[key: string]: Type}): Type {
+        for (let key in typeVars) {
+            delete this.typeVars[key];
+            this.resolvedTypeVars[key] = typeVars[key];
+        }
         return this.copy();
     }
     static with(typeVars: {[key: string]: Type}): Type {
         return this;
+    }
+    getResolvedTypeVar(name: string): typevar {
+        return this.typeVars.filter(tv => tv.name === name)[0];
+    }
+    static getResolvedTypeVar(name: string): typevar {
+        return this.typeVars.filter(tv => tv.name === name)[0];
     }
 }
 
@@ -43,10 +55,12 @@ export class typevar extends TypeClass {
     static type: 'typevar';
     name: string;
     constraint: Type;
-    constructor(name: string, constraint: Type) {
+    default: Type | null;
+    constructor(name: string, constraint?: Type | null, defaultValue?: Type | null) {
         super();
         this.name = name;
-        this.constraint = constraint;
+        this.constraint = constraint ?? any_;
+        this.default = defaultValue ?? null;
     }
     copy(): typevar {
         return new typevar(this.name, this.constraint);
@@ -55,6 +69,7 @@ export class typevar extends TypeClass {
         return this.constraint.extends(type);
     }
     with(typeVars: {[key: string]: Type}): Type {
+        TypeClass.prototype.with.call(this, typeVars);
         for (let name in typeVars) {
             if (name === this.name) {
                 return typeVars[name];
@@ -307,6 +322,7 @@ export class object_ extends TypeClass {
         });
     }
     with(typeVars: {[key: string]: Type}): object_ {
+        TypeClass.prototype.with.call(this, typeVars);
         let props: {[key: PropertyKey]: Type} = {};
         for (let name of Reflect.ownKeys(this.props)) {
             this.props[name] = this.props[name].with(typeVars);
@@ -340,6 +356,7 @@ export class union extends TypeClass {
         return Object.assign(new union(...this.types.map(type => type.copy())), {tagIndex: this.tagIndex});
     }
     with(typeVars: {[key: string]: Type}): union {
+        TypeClass.prototype.with.call(this, typeVars);
         return new union(...this.types.map(type => type.with(typeVars)));
     }
 }
@@ -359,6 +376,7 @@ export class intersection extends TypeClass {
         return new intersection(...this.types.map(type => type.copy()));
     }
     with(typeVars: {[key: string]: Type}): intersection {
+        TypeClass.prototype.with.call(this, typeVars);
         return new intersection(...this.types.map(type => type.with(typeVars)));
     }
 }
