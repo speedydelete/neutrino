@@ -2,6 +2,9 @@
 export abstract class TypeClass {
     abstract type: string;
     static type: string;
+    typeVars: typevar[] = [];
+    static typeVars: typevar[] = [];
+    constructor(...args: unknown[]) {}
     extends(other: Type): boolean {
         return other.doesExtend(this);
     }
@@ -19,6 +22,45 @@ export abstract class TypeClass {
     }
     static toString(): string {
         return this.type;
+    }
+    copy(): Type {
+        // @ts-ignore
+        return new (this.constructor)();
+    }
+    static copy(): Type {
+        return this;
+    }
+    with(typeVars: {[key: string]: Type}): Type {
+        return this.copy();
+    }
+    static with(typeVars: {[key: string]: Type}): Type {
+        return this;
+    }
+}
+
+export class typevar extends TypeClass {
+    type: 'typevar';
+    static type: 'typevar';
+    name: string;
+    constraint: Type;
+    constructor(name: string, constraint: Type) {
+        super();
+        this.name = name;
+        this.constraint = constraint;
+    }
+    copy(): typevar {
+        return new typevar(this.name, this.constraint);
+    }
+    extends(type: Type) {
+        return this.constraint.extends(type);
+    }
+    with(typeVars: {[key: string]: Type}): Type {
+        for (let name in typeVars) {
+            if (name === this.name) {
+                return typeVars[name];
+            }
+        }
+        return this;
     }
 }
 
@@ -86,6 +128,9 @@ export class boolean_ extends TypeClass {
     toString(): string {
         return this.value.toString();
     }
+    copy(): boolean_ {
+        return new boolean_(this.value);
+    }
 }
 export const true_ = new boolean_(true);
 export const false_ = new boolean_(false);
@@ -104,6 +149,9 @@ export class number_ extends TypeClass {
     }
     toString(): string {
         return this.value.toString();
+    }
+    copy(): number_ {
+        return new number_(this.value);
     }
 }
 
@@ -151,6 +199,9 @@ export class string_ extends TypeClass {
     toString(): string {
         return toStringLiteral(this.value);
     }
+    copy(): string_ {
+        return new string_(this.value);
+    }
 }
 
 export class symbol_ extends TypeClass {
@@ -186,6 +237,9 @@ export class bigint_ extends TypeClass {
     toString(): string {
         return this.value + 'n';
     }
+    copy(): bigint_ {
+        return new bigint_(this.value);
+    }
 }
 
 export class object_ extends TypeClass {
@@ -199,6 +253,22 @@ export class object_ extends TypeClass {
     constructor(props: {[key: PropertyKey]: Type} = {}) {
         super();
         this.props = props;
+    }
+    doesExtend(other: Type): boolean {
+        if (!(other instanceof object_)) {
+            return false;
+        }
+        let keys = Reflect.ownKeys(this.props);
+        let otherKeys = Reflect.ownKeys(other.props);
+        if (!keys.every(key => otherKeys.includes(key))) {
+            return false;
+        }
+        for (let key of keys) {
+            if (!this.props[key].extends(other.props[key])) {
+                return false;
+            }
+        }
+        return true;
     }
     toString(): string {
         let props: string[] = [];
@@ -228,6 +298,26 @@ export class object_ extends TypeClass {
         }
         return out + '\n}';
     }
+    copy(): object_ {
+        return Object.assign(new object_(this.props), {
+            params: this.params.map(([key, value]) => [key, value.copy()]),
+            returnType: this.returnType,
+            constructorParams: this.constructorParams.map(([key, value]) => [key, value.copy()]),
+            constructorReturnType: this.constructorReturnType,
+        });
+    }
+    with(typeVars: {[key: string]: Type}): object_ {
+        let props: {[key: PropertyKey]: Type} = {};
+        for (let name of Reflect.ownKeys(this.props)) {
+            this.props[name] = this.props[name].with(typeVars);
+        }
+        return Object.assign(new object_(props), {
+            params: this.params.map(([key, value]) => [key, value.with(typeVars)]),
+            returnType: this.returnType ? this.returnType.with(typeVars) : null,
+            constructorParams: this.constructorParams.map(([key, value]) => [key, value.with(typeVars)]),
+            constructorReturnTypes: this.constructorReturnType ? this.constructorReturnType.with(typeVars) : null,
+        });
+    }
 }
 
 
@@ -243,6 +333,15 @@ export class union extends TypeClass {
     doesExtend(other: Type): boolean {
         return this.types.some(type => other.extends(type));
     }
+    toString(): string {
+        return this.types.join(' | ');
+    }
+    copy(): union {
+        return Object.assign(new union(...this.types.map(type => type.copy())), {tagIndex: this.tagIndex});
+    }
+    with(typeVars: {[key: string]: Type}): union {
+        return new union(...this.types.map(type => type.with(typeVars)));
+    }
 }
 
 export class intersection extends TypeClass {
@@ -256,41 +355,11 @@ export class intersection extends TypeClass {
     doesExtend(other: Type): boolean {
         return this.types.every(type => other.extends(type));
     }
-}
-
-export class typevar extends TypeClass {
-    type: 'typevar';
-    static type: 'typevar';
-    name: string;
-    constraint: Type;
-    constructor(name: string, constraint: Type) {
-        super();
-        this.name = name;
-        this.constraint = constraint;
+    copy(): intersection {
+        return new intersection(...this.types.map(type => type.copy()));
     }
-    extends(type: Type) {
-        return this.constraint.extends(type);
-    }
-}
-
-export class generic extends TypeClass {
-    type: 'generic';
-    static type: 'generic';
-    typevars: typevar[];
-    value: Type;
-    resolved: boolean;
-    constructor(value: Type, typevars: typevar[], resolved: boolean = false) {
-        super();
-        this.value = value;
-        this.typevars = typevars;
-        this.resolved = resolved;
-    }
-    extends(other: Type): boolean {
-        return this.value.extends(other);
-    }
-    resolve(...types: Type[]) {
-        let typevars = types.map((type, i) => new typevar(this.typevars[i].name, type));
-        return new generic(this.value, typevars, true);
+    with(typeVars: {[key: string]: Type}): intersection {
+        return new intersection(...this.types.map(type => type.with(typeVars)));
     }
 }
 

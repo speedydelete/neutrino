@@ -79,7 +79,7 @@ class VariableMap {
         }
     }
 
-    set(name: string, type: Type) {
+    set(name: string, type: Type): void {
         this.data.set(name, type);
     }
 
@@ -96,6 +96,22 @@ class VariableMap {
 
     setType(name: string, type: Type) {
         this.typeData.set(name, type);
+    }
+
+    has(name: string): boolean {
+        return this.data.has(name) || (this.parent ? this.parent.has(name) : false);
+    }
+
+    hasType(name: string): boolean {
+        return this.typeData.has(name) || (this.parent ? this.parent.hasType(name) : false);
+    }
+
+    get root(): VariableMap {
+        let out: VariableMap = this;
+        while (out.parent !== null) {
+            out = out.parent;
+        }
+        return out;
     }
 
 }
@@ -117,6 +133,7 @@ export class Compiler {
 
     vars: VariableMap;
     currentNode: bt.Node;
+    strictMode: boolean;
     thisType: Type = t.undefined;
 
     topLevel: string[];
@@ -264,6 +281,104 @@ export class Compiler {
         this.error('TypeError', 'undefined is not a function');
     }
 
+    parseType(node: bt.TSType | bt.Noop | bt.TSTypeAnnotation | bt.TypeAnnotation): Type {
+        if (node.type === 'Noop') {
+            return t.unknown;
+        } else if (node.type === 'TSTypeAnnotation') {
+            return this.parseType(node.typeAnnotation);
+        } else if (node.type === 'TypeAnnotation') {
+            this.error('SyntaxError', 'Flow is not suported');
+        } else if (node.type === 'TSIntrinsicKeyword') {
+            this.error('SyntaxError', 'The intrinsic keyword is not supported');
+        } else if (node.type === 'TSAnyKeyword') {
+            return t.any;
+        } else if (node.type === 'TSUnknownKeyword') {
+            return t.unknown;
+        } else if (node.type === 'TSUndefinedKeyword') {
+            return t.undefined;
+        } else if (node.type === 'TSNeverKeyword') {
+            return t.never;
+        } else if (node.type === 'TSVoidKeyword') {
+            return t.void;
+        } else if (node.type === 'TSNullKeyword') {
+            return t.null;
+        } else if (node.type === 'TSBooleanKeyword') {
+            return t.boolean;
+        } else if (node.type === 'TSNumberKeyword') {
+            return t.number;
+        } else if (node.type === 'TSStringKeyword') {
+            return t.string;
+        } else if (node.type === 'TSSymbolKeyword') {
+            return t.symbol;
+        } else if (node.type === 'TSBigIntKeyword') {
+            return t.bigint;
+        } else if (node.type === 'TSObjectKeyword') {
+            return t.object;
+        } else if (node.type === 'TSArrayType') {
+            return this.vars.getType('Array').with({T: this.parseType(node.elementType)});
+        } else if (node.type === 'TSUnionType') {
+            return new t.union(...node.types.map(this.parseType));
+        } else if (node.type === 'TSIntersectionType') {
+            return new t.intersection(...node.types.map(this.parseType));
+        } else {
+            throw new Error(`Unrecognized AST node type in compileType: ${node.type}`);
+        }
+    }
+
+    compileAssignment(node: bt.LVal | bt.OptionalMemberExpression, right: string, type: Type, isDeclaration: boolean): string {
+        if (node.type === 'Identifier') {
+            if (!this.vars.has(node.name)) {
+                if (isDeclaration) {
+                    let varType: Type;
+                    if (!node.typeAnnotation) {
+                        if (type.type === 'unknown') {
+                            this.error('TypeError', 'Unable to infer type of variable');
+                        } else {
+                            varType = type;
+                        }
+                    } else {
+                        varType = this.parseType(node.typeAnnotation);
+                    }
+                }
+                this.error('SyntaxError', 'All variables must be declared, even in non-strict mode');
+            } else {
+                if (isDeclaration) {
+                    this.error('SyntaxError', 'Variable is already declared');
+                }
+                let varType = this.vars.get(node.name);
+                if (!varType.extends(type)) {
+                    this.error('TypeError', `Cannot assign value of type ${type} to variable of ${varType}`);
+                }
+                return `v${node.name} = ${right}`;
+            }
+        } else if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') {
+            let [object, objectType] = this.compileExpression(node.object);
+            if (node.type === 'OptionalMemberExpression' && (objectType.extends(t.undefined) || objectType.extends(t.null))) {
+                return right;
+            }
+            if (!objectType.extends(t.object)) {
+                this.error('TypeError', 'Cannot assign to properties of primitives');
+            }
+            let prop: string;
+            if (node.property.type === 'Identifier') {
+                prop = this.compileString(node.property.name);
+                let propType = (objectType as t.object).props[node.property.name];
+                if (!propType.extends(type)) {
+                    this.error('TypeError', `Cannot assign value of type ${type} to property of type ${propType}`)
+                }
+            } else {
+                prop = this.compileExpression(node.property)[0];
+            }
+            if (node.optional) {
+                return `(${object} == NULL ? ${right} : set_key(${object}, ${prop}, ${right}))`;
+            } else {
+                return `set_key(${object}, ${prop}, ${right}`;
+            }
+        } else {
+            throw new Error(`Unrecognized AST node type in compileAssignment: ${node.type}`);
+        }
+    }
+
     compileExpression(node: bt.Expression | bt.PrivateName | bt.V8IntrinsicIdentifier): [string, Type] {
         this.currentNode = node;
         if (node.type === 'Identifier') {
@@ -320,11 +435,11 @@ export class Compiler {
             }
             this.currentNode = node;
             if (elts.length === 0) {
-                return ['create_array("")', (this.vars.get('Array') as t.generic).resolve(t.any)];
+                return ['create_array("")', this.vars.get('Array').with({T: t.any})];
             } else {
                 return [
                     `create_array(${this.getTypeTags(types)}, ${elts.join(', ')})`,
-                    (this.vars.get('Array') as t.generic).resolve(new t.union(...types))
+                    this.vars.get('Array').with({T: new t.union(...types)})
                 ];
             }
         } else if (node.type === 'ObjectExpression') {
@@ -405,11 +520,7 @@ export class Compiler {
                     return [node.operator + expr, outType];
                 }
             } else {
-                if (node.operator === '!') {
-                    return [`(${expr} != NULL)`, t.boolean];
-                } else {
-                    this.error('SyntaxError', `The postfix unary operator ${node.operator} is not supported.`);
-                }
+                this.error('SyntaxError', `The postfix unary operator ${node.operator} is not supported.`);
             }
         } else if (node.type === 'UpdateExpression') {
             let [expr, type] = this.compileExpression(node.argument);
@@ -495,9 +606,7 @@ export class Compiler {
             }
         } else if (node.type === 'AssignmentExpression') {
             let [right, rightType] = this.compileExpression(node.right);
-            // todo: make this work
-            // @ts-ignore
-            return [`${this.compileLval(node.left)[0]} ${node.operator} ${right}`, rightType];
+            return [this.compileAssignment(node.left, right, rightType, false), rightType];
         } else if (node.type === 'LogicalExpression') {
             let [left, leftType] = this.compileExpression(node.left);
             let [right, rightType] = this.compileExpression(node.right);
@@ -543,7 +652,7 @@ export class Compiler {
             }
             let [callee, calleeType] = this.compileExpression(node.callee);
             if (calleeType instanceof t.object && calleeType.returnType !== null) {
-                let out = callee + '(' + this.getTypeTags(args.map(arg => arg[1])) + args.map(arg => arg[0]).join(', ') + ')';
+                let out = `${callee}(${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
                 if (node.optional) {
                     return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.returnType, t.undefined)];
                 } else {
@@ -558,6 +667,19 @@ export class Compiler {
         } else if (node.type === 'ParenthesizedExpression') {
             let expr = this.compileExpression(node.expression);
             return ['(' + expr[0] + ')', expr[1]];
+        } else if (node.type === 'NewExpression') {
+            let args = node.arguments.map(arg => this.compileExpression(arg as bt.Expression));
+            let [callee, calleeType] = this.compileExpression(node.callee);
+            if (calleeType instanceof t.object && calleeType.constructorReturnType !== null) {
+                let out = `new(${callee}, ${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
+                if (node.optional) {
+                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.constructorReturnType, t.undefined)];
+                } else {
+                    return [out, calleeType.constructorReturnType];
+                }
+            } else {
+                this.error('TypeError', `Object of type ${calleeType} is not a constructor`);
+            }
         } else if (node.type === 'DoExpression') {
             this.error('SyntaxError', 'Do statements are not supported');
         } else if (node.type === 'ModuleExpression') {
@@ -591,6 +713,23 @@ export class Compiler {
                 }
                 return [tagCode + '(' + out.join(', ') + ')', tagType.returnType];
             }
+        } else if (node.type === 'V8IntrinsicIdentifier') {
+            this.error('SyntaxError', 'Neutrino is not V8');
+        } else if (node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion') {
+            return [this.compileExpression(node.expression)[0], this.parseType(node.typeAnnotation)];
+        } else if (node.type === 'TSNonNullExpression') {
+            let [out, outType] = this.compileExpression(node.expression);
+            if (outType instanceof t.union) {
+                return [`ts_non_null_tag(argument_types[${outType.tagIndex}]))`, t.bigint];
+            } else if (outType.extends(t.undefined) || outType.extends(t.null)) {
+                return ['true', new t.boolean(true)];
+            } else {
+                return ['false', new t.boolean(false)];
+            }
+        } else if (node.type === 'TSSatisfiesExpression') {
+            this.error('SyntaxError', 'The satisfies operator is not supported');
+        } else if (node.type === 'TSInstantiationExpression') {
+            this.error('SyntaxError', 'Instantiation expressions are not supported');
         } else {
             throw new Error(`Unrecognized AST node type in compileExpression: ${node.type}`);
         }
