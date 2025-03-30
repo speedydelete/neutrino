@@ -1,5 +1,5 @@
 
-import type * as bt from '@babel/types';
+import * as bt from '@babel/types';
 import * as parser from '@babel/parser';
 import * as t from './types';
 import {Type} from './types';
@@ -27,24 +27,21 @@ class CompilerError extends Error {
     endCol: number;
     rawLine: string;
 
-    constructor(compiler: Compiler, type: string, message: string, node: bt.Node) {
+    constructor(compiler: Compiler, type: string, message: string, loc: bt.SourceLocation) {
         super(message);
         this.compiler = compiler;
         this.type = type;
-        if (!node.loc) {
-            throw new Error('node.loc is undefined');
-        }
-        this.file = node.loc.filename;
-        this.line = node.loc.start.line;
-        this.col = node.loc.start.column;
+        this.file = loc.filename;
+        this.line = loc.start.line;
+        this.col = loc.start.column;
         if (this.compiler.code === null) {
             throw new Error('this.compiler.code is null');
         }
         this.rawLine = this.compiler.code.split('\n')[this.line - 1];
-        if (node.loc.end.line !== this.line) {
+        if (loc.end.line !== this.line) {
             this.endCol = this.rawLine.length;
         } else {
-            this.endCol = node.loc.end.column;
+            this.endCol = loc.end.column;
         }
     }
 
@@ -94,7 +91,7 @@ class VariableMap {
     }
 
     getType(name: string): Type {
-        let value = this.data.get(name);
+        let value = this.typeData.get(name);
         if (value !== undefined) {
             return value;
         } else if (this.parent !== null) {
@@ -156,6 +153,9 @@ export class Compiler {
     constructor(options: CompilerOptions = {}) {
         this.options = options;
         this.vars = new VariableMap(this);
+        this.parseType = this.parseType.bind(this);
+        this.compileExpression = this.compileExpression.bind(this);
+        this.compileStatement = this.compileStatement.bind(this);
         if (options.includeBuiltins ?? true) {
             this.code = BUILTIN_CODE;
             for (let node of this.parse(BUILTIN_CODE, BUILTIN_OPTIONS).body) {
@@ -167,7 +167,7 @@ export class Compiler {
 
     error(type: string, message: string): never {
         if (this.currentNode !== null) {
-            throw new CompilerError(this, type, message, this.currentNode);
+            throw new CompilerError(this, type, message, this.currentNode.loc as bt.SourceLocation);
         } else {
             throw new Error('currentNode is null');
         }
@@ -185,13 +185,33 @@ export class Compiler {
         if (options.async) {
             plugins.push('topLevelAwait');
         }
-        return parser.parse(code, {
-            createImportExpressions: true,
-            createParenthesizedExpressions: true,
-            sourceType: 'module',
-            sourceFilename: options.filename ?? '<anonymous>',
-            plugins,
-        }).program;
+        try {
+            return parser.parse(code, {
+                createImportExpressions: true,
+                createParenthesizedExpressions: true,
+                sourceType: 'module',
+                sourceFilename: options.filename ?? '<anonymous>',
+                plugins,
+            }).program;
+        } catch (error) {
+            let [type, msg_loc] = String(error).split(': ');
+            let [msg, loc] = msg_loc.slice(0, -1).split('. (');
+            let [line, col] = loc.split(':').map(x => parseInt(x));
+            throw new CompilerError(this, type, msg, {
+                filename: options.filename ?? '<anonymous>',
+                start: {
+                    line: line,
+                    column: col,
+                    index: 0,
+                },
+                end: {
+                    line: line,
+                    column: col + 1,
+                    index: 0,
+                },
+                identifierName: '',
+            });
+        }
     }
 
     pushScope(): void {
@@ -402,7 +422,10 @@ export class Compiler {
                     }
                 }
             } else {
-                this.error('SyntaxError', 'Index signatures are not supported');
+                if (!node.typeAnnotation || !node.parameters[0].typeAnnotation) {
+                    this.error('SyntaxError', 'Index signatures must have type annotations');
+                }
+                out.indexes.push([node.parameters[0].name, this.parseType(node.parameters[0].typeAnnotation), this.parseType(node.typeAnnotation)]);
             }
         }
         return out;
@@ -416,6 +439,11 @@ export class Compiler {
             return this.parseType(node.typeAnnotation);
         } else if (node.type === 'TypeAnnotation') {
             this.error('SyntaxError', 'Flow is not suported');
+        } else if (node.type === 'TSTypeReference') {
+            if (node.typeName.type === 'TSQualifiedName') {
+                this.error('SyntaxError', 'Qualified names are not supported');
+            }
+            return this.vars.getType(node.typeName.name);
         } else if (node.type === 'TSIntrinsicKeyword') {
             this.error('SyntaxError', 'The intrinsic keyword is not supported');
         } else if (node.type === 'TSAnyKeyword') {
@@ -1036,8 +1064,12 @@ export class Compiler {
             let type = this.vars.getType('Function').copy() as t.object;
             type.call = new t.functionsig(params, this.parseType(node.returnType));
             type.construct = new t.functionsig(params, t.any);
+            this.pushScope();
             if (node.typeParameters) {
                 type.typeVars = this.parseTypeParameters(node.typeParameters);
+                for (let typeVar of type.typeVars) {
+                    this.vars.setType(typeVar.name, typeVar.constraint);
+                }
             }
             let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {`;
             let out = ['args_setup();'];
@@ -1050,6 +1082,7 @@ export class Compiler {
             for (let statement of node.body.body) {
                 out.push(...this.compileStatement(statement).split('\n'));
             }
+            this.popScope();
             return start + out.map(line => '    ' + line).join('\n') + '\n}';
         } else if (node.type === 'TypeAlias') {
             this.error('SyntaxError', 'Flow is not supported');
@@ -1064,17 +1097,12 @@ export class Compiler {
         }
     }
 
-    compile(code: string | bt.Program): string {
-        let ast: bt.Program;
-        if (typeof code === 'string') {
-            ast = this.parse(code);
-        } else {
-            ast = code;
-        }
+    compile(code: string): string {
+        this.code = code;
         let funcs: string[] = [];
         let topLevel: string[] = [];
         let topLevelVars: string[] = [];
-        for (let node of ast.body) {
+        for (let node of this.parse(code).body) {
             let code = this.compileStatement(node);
             if (node.type === 'VariableDeclaration') {
                 topLevelVars.push(code);

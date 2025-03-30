@@ -2,10 +2,14 @@
 if [ -f .temp.c ]; then 
     rm .temp.c
 fi
-node -e 'try {
+node --enable-source-maps -e 'try {
     const fs = require("fs");
-    fs.writeFileSync(".temp.c", require("./lib").compile(fs.readFileSync("'$1'")));
+    fs.writeFileSync(".temp.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), {filename: "'$1'"}));
 } catch (error) {
-    console.error(error.toStringColors());
+    if ("toStringColors" in error) {
+        console.error(error.toStringColors());
+    } else {
+        console.error(error);
+    }
     process.exit(1);
 }' && gcc -Wall -Werror -Wpedantic -Isrc/js/builtins .temp.c

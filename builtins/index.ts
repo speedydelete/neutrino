@@ -1,4 +1,26 @@
 
+type PropertyKey = string | number;
+
+interface Object {
+    constructor: object | null;
+    hasOwnProperty(prop: PropertyKey): boolean;
+    isPrototypeOf(object: object): boolean;
+    toLocaleString(): string;
+    toString(): string;
+    valueOf(): any;
+}
+
+interface Array<T> {
+    [index: number]: T;
+    length: number;
+}
+
+interface Function extends Object {
+    (...args: any[]): any;
+    new (...args: any[]): any;
+    prototype: object;
+}
+
 declare var neutrino: {
     c(strings: string[], ...parts: any): any;
     compiledFunctionName: string;
@@ -13,23 +35,6 @@ var NaN = 0/0;
 // @ts-ignore
 var undefined = void 0;
 
-
-type PropertyKey = string | number;
-
-interface Object {
-    constructor: object | null;
-    hasOwnProperty(prop: PropertyKey): boolean;
-    isPrototypeOf(object: object): boolean;
-    toLocaleString(): string;
-    toString(): string;
-    valueOf(): any;
-}
-
-interface Function extends Object {
-    (...args: any[]): any;
-    new (...args: any[]): any;
-    prototype: object;
-}
 
 type CallableFunction = Function;
 type NewableFunction = Function;
@@ -147,11 +152,6 @@ function String(value: any): string {
     }
 }
 
-
-interface Array<T> {
-    [index: number]: T;
-    length: number;
-}
 
 function Array<T>(...items: T[]): Array<T> {
     return items;

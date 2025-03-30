@@ -14,6 +14,7 @@ export function highlight(code: string): string {
     let match: RegExpMatchArray | null;
     let bracketIndex = 0;
     let inType = false;
+    let inTypeAlias = false;
     let inTypeName = false;
     let inTypeBracketIndex = 0;
     main: while (i < code.length) {
@@ -30,7 +31,9 @@ export function highlight(code: string): string {
                     if (IN_TYPE_KEYWORDS.includes(keyword)) {
                         inType = true;
                         inTypeBracketIndex = bracketIndex;
-                        if (keyword !== 'type') {
+                        if (keyword === 'type') {
+                            inTypeAlias = true;
+                        } else {
                             inTypeName = true;
                         }
                     }
@@ -50,7 +53,7 @@ export function highlight(code: string): string {
             } else {
                 out += '\x1b[96m' + text;
             }
-            if (inTypeName) {
+            if (inType && inTypeName) {
                 inType = false;
                 inTypeName = false;
             }
@@ -76,14 +79,14 @@ export function highlight(code: string): string {
                 i++;
             }
         } else if (code[i] === '"' || code[i] === "'") {
-            let wasBackslash = false;
             let endChar = code[i];
             let string = '';
             do {
                 string += code[i];
                 i++;
-            } while (i < code.length && !(code[i] === endChar && !wasBackslash));
-            out += '\x1b[38;5;214m' + string;
+            } while (i < code.length && !(code[i] === endChar && code[i - 1] !== '\\'));
+            out += '\x1b[38;5;214m' + string + endChar;
+            i++;
         } else if (code[i] === '/' && code[i + 1] === '/') {
             let text = '';
             while (code[i] !== '\n' && i > code.length) {
@@ -104,7 +107,7 @@ export function highlight(code: string): string {
                 inType = true;
                 inTypeBracketIndex = bracketIndex;
             }
-            if ('=,\n'.includes(code[i])) {
+            if (('=,'.includes(code[i]) && !inTypeAlias && inTypeBracketIndex === bracketIndex) || '\n;'.includes(code[i])) {
                 inType = false;
             }
             i++;

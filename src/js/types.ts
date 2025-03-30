@@ -310,11 +310,13 @@ export class object_ extends TypeClass {
     type ='object';
     static type ='object';
     props: {[key: PropertyKey]: Type};
+    indexes: [string, Type, Type][] = [];
     call: functionsig | null = null;
     construct: functionsig | null = null;
-    constructor(props: {[key: PropertyKey]: Type} = {}) {
+    constructor(props: {[key: PropertyKey]: Type} = {}, indexes: [string, Type, Type][] = []) {
         super();
         this.props = props;
+        this.indexes = indexes;
     }
     doesExtend(other: Type): boolean {
         if (!(other instanceof object_)) {
@@ -334,8 +336,18 @@ export class object_ extends TypeClass {
     }
     toString(): string {
         let props: string[] = [];
-        for (let [key, type] of Object.entries(this.props)) {
-            props.push(key.match(/^[a-zA-Z0-9_$]+$/) ? key : toStringLiteral(key) + ': ' + type.toString());
+        for (let key of Reflect.ownKeys(this.props)) {
+            let strKey: string;
+            if (typeof key === 'string') {
+                strKey = key.match(/^[a-zA-Z0-9_$]+$/) ? key : toStringLiteral(key);
+            } else {
+                let symbolKey = Symbol.keyFor(key);
+                strKey = symbolKey === undefined ? '[unique symbol]' : `[Symbol.for(${toStringLiteral(symbolKey)})]`;
+            }
+            props.push(strKey + ': ' + this.props[key].toString());
+        }
+        for (let [name, constraint, type] of this.indexes) {
+            props.push(`[${name}: ${constraint}]: ${type}`);
         }
         if (props.length === 0 && (this.call === null || this.construct === null)) {
             if (this.call !== null) {
