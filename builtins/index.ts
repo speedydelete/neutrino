@@ -168,6 +168,12 @@ function parseFloat(value: string): number {
     return neutrino.c`atof(${value})`;
 }
 
+const console = {
+    log(data: string): void {
+        neutrino.c`printf(${data})`;
+    }
+};
+
 
 interface RegExp {}
 

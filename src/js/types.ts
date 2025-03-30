@@ -27,17 +27,27 @@ export abstract class TypeClass {
     }
     copy(): Type {
         // @ts-ignore
-        return new (this.constructor)();
+        let out: Type = new (this.constructor)();
+        out.typeVars = this.typeVars;
+        out.resolvedTypeVars = this.resolvedTypeVars;
+        return out;
     }
     static copy(): Type {
         return this;
     }
     with(typeVars: {[key: string]: Type}): Type {
-        for (let key in typeVars) {
-            delete this.typeVars[key];
-            this.resolvedTypeVars[key] = typeVars[key];
+        let out = this.copy();
+        let newTypeVars: typevar[] = [];
+        for (let i = 0; i < this.typeVars.length; i++) {
+            let typeVar = this.typeVars[i];
+            if (typeVar.name in typeVars) {
+                out.resolvedTypeVars.push(new typevar(typeVar.name, typeVar.constraint, typeVars[typeVar.name]));
+            } else {
+                newTypeVars.push(typeVar);
+            }
         }
-        return this.copy();
+        out.typeVars = newTypeVars;
+        return out;
     }
     static with(typeVars: {[key: string]: Type}): Type {
         return this;
@@ -51,8 +61,8 @@ export abstract class TypeClass {
 }
 
 export class typevar extends TypeClass {
-    type: 'typevar';
-    static type: 'typevar';
+    type ='typevar';
+    static type ='typevar';
     name: string;
     constraint: Type;
     default: Type | null;
@@ -83,8 +93,8 @@ export type Type = TypeClass | typeof TypeClass;
 
 
 export class any_ extends TypeClass {
-    type: 'any';
-    static type: 'any';
+    type ='any';
+    static type ='any';
     extends(other: Type): boolean {
         return true;
     }
@@ -94,16 +104,16 @@ export class any_ extends TypeClass {
 }
 
 export class unknown_ extends TypeClass {
-    type: 'unknown';
-    static type: 'unknown';
+    type ='unknown';
+    static type ='unknown';
     doesExtend(other: Type): boolean {
         return true;
     }
 }
 
 export class never_ extends TypeClass {
-    type: 'never';
-    static type: 'never';
+    type ='never';
+    static type ='never';
     doesExtend(other: Type): boolean {
         return false;
     }
@@ -111,27 +121,27 @@ export class never_ extends TypeClass {
 
 
 export class undefined_ extends TypeClass {
-    type: 'undefined';
-    static type: 'undefined';
+    type ='undefined';
+    static type ='undefined';
 }
 
 export class void_ extends TypeClass {
-    type: 'void';
-    static type: 'void';
+    type ='void';
+    static type ='void';
     doesExtend(other: Type): boolean {
         return other.type === 'void' || other.type === 'undefined';
     }
 }
 
 export class null_ extends TypeClass {
-    type: 'null';
-    static type: 'null';
+    type ='null';
+    static type ='null';
 }
 
 
 export class boolean_ extends TypeClass {
-    type: 'boolean';
-    static type: 'boolean';
+    type ='boolean';
+    static type ='boolean';
     value: boolean;
     constructor(value: boolean) {
         super();
@@ -152,8 +162,8 @@ export const false_ = new boolean_(false);
 
 
 export class number_ extends TypeClass {
-    type: 'number';
-    static type: 'number';
+    type ='number';
+    static type ='number';
     value: number;
     constructor(value: number) {
         super();
@@ -171,7 +181,7 @@ export class number_ extends TypeClass {
 }
 
 
-const JS_ESCAPES = {
+const JS_ESCAPES: {[key: string]: string} = {
     '\0': '\\0',
     '"': '\\"',
     '\\': '\\\\',
@@ -201,8 +211,8 @@ function toStringLiteral(value: string): string {
 
 
 export class string_ extends TypeClass {
-    type: 'string';
-    static type: 'string';
+    type = 'string';
+    static type = 'string';
     value: string;
     constructor(value: string) {
         super();
@@ -220,8 +230,8 @@ export class string_ extends TypeClass {
 }
 
 export class symbol_ extends TypeClass {
-    type: 'symbol';
-    static type: 'symbol';
+    type ='symbol';
+    static type ='symbol';
     value: string;
     constructor(value: string) {
         super();
@@ -239,8 +249,8 @@ export class symbol_ extends TypeClass {
 }
 
 export class bigint_ extends TypeClass {
-    type: 'bigint';
-    static type: 'bigint';
+    type ='bigint';
+    static type ='bigint';
     value: bigint;
     constructor(value: bigint) {
         super();
@@ -257,14 +267,51 @@ export class bigint_ extends TypeClass {
     }
 }
 
-export class object_ extends TypeClass {
-    type: 'object';
-    static type: 'object';
-    props: {[key: PropertyKey]: Type};
+export class functionsig extends TypeClass {
+    type ='functionsig';
+    static type ='functionsig';
     params: [string, Type][] = [];
-    returnType: Type | null = null;
-    constructorParams: [string, Type][] = [];
-    constructorReturnType: Type | null = null;
+    returnType: Type;
+    restName: string | null;
+    constructor(params?: [string, Type][], returnType?: Type, restName?: string | null) {
+        super();
+        this.params = params ?? [];
+        this.returnType = returnType ?? any_;
+        this.restName = restName ?? null;
+    }
+    doesExtend(other: Type): boolean {
+        if (!(other instanceof functionsig)) {
+            return false;
+        }
+        if (other.params.length < this.params.length) {
+            return false;
+        }
+        for (let i = 0; i < this.params.length; i++) {
+            if (!(other.params[i][1].doesExtend(this.params[i][1]))) {
+                return false;
+            }
+        }
+        return this.returnType.doesExtend(other.returnType) && this.restName === other.restName; 
+    }
+    toString(): string {
+        return `(${this.params.map(([name, type]) => `${name}: ${type}`).join(', ')}): ${this.returnType}`;
+    }
+    toStringArrow(): string {
+        return `(${this.params.map(([name, type]) => `${name}: ${type}`).join(', ')}) => ${this.returnType}`;
+    }
+    with(typeVars: {[key: string]: Type}): Type {
+        let params = this.params.map(([name, type]) => [name, type.with(typeVars)]) as [string, Type][];
+        let returnType = this.returnType.with(typeVars);
+        return new functionsig(params, returnType, this.restName);
+    }
+}
+
+export class object_ extends TypeClass {
+    type ='object';
+    static type ='object';
+    props: {[key: PropertyKey]: Type};
+    call: functionsig | null = null;
+    construct: functionsig | null = null;
     constructor(props: {[key: PropertyKey]: Type} = {}) {
         super();
         this.props = props;
@@ -290,20 +337,20 @@ export class object_ extends TypeClass {
         for (let [key, type] of Object.entries(this.props)) {
             props.push(key.match(/^[a-zA-Z0-9_$]+$/) ? key : toStringLiteral(key) + ': ' + type.toString());
         }
-        if (props.length === 0 && !(this.returnType !== null && this.constructorReturnType !== null)) {
-            if (this.returnType !== null) {
-                return '(' + this.params.map(x => x[0] + ': ' + x[1].toString()).join(', ') + ' => ' + this.returnType.toString()
-            } else if (this.constructorReturnType !== null) {
-                return '(' + this.constructorParams.map(x => x[0] + ': ' + x[1].toString()).join(', ') + ' => ' + this.constructorReturnType.toString()
+        if (props.length === 0 && (this.call === null || this.construct === null)) {
+            if (this.call !== null) {
+                return this.call.toStringArrow();
+            } else if (this.construct !== null) {
+                return this.construct.toStringArrow();
             } else {
                 return '{}';
             }
         }
-        if (this.returnType !== null) {
-            props.push('(' + this.params.map(x => x[0] + ': ' + x[1].toString()).join(',') + '): ' + this.returnType.toString());
+        if (this.call !== null) {
+            props.push(this.call.toString());
         }
-        if (this.constructorReturnType !== null) {
-            props.push('new (' + this.constructorParams.map(x => x[0] + ': ' + x[1].toString()).join(',') + '): ' + this.constructorReturnType.toString());
+        if (this.construct !== null) {
+            props.push('new ' + this.construct.toString());
         }
         let out = '{\n';
         for (let prop of props) {
@@ -315,10 +362,8 @@ export class object_ extends TypeClass {
     }
     copy(): object_ {
         return Object.assign(new object_(this.props), {
-            params: this.params.map(([key, value]) => [key, value.copy()]),
-            returnType: this.returnType,
-            constructorParams: this.constructorParams.map(([key, value]) => [key, value.copy()]),
-            constructorReturnType: this.constructorReturnType,
+            call: this.call?.copy(),
+            construct: this.construct?.copy(),
         });
     }
     with(typeVars: {[key: string]: Type}): object_ {
@@ -328,18 +373,16 @@ export class object_ extends TypeClass {
             this.props[name] = this.props[name].with(typeVars);
         }
         return Object.assign(new object_(props), {
-            params: this.params.map(([key, value]) => [key, value.with(typeVars)]),
-            returnType: this.returnType ? this.returnType.with(typeVars) : null,
-            constructorParams: this.constructorParams.map(([key, value]) => [key, value.with(typeVars)]),
-            constructorReturnTypes: this.constructorReturnType ? this.constructorReturnType.with(typeVars) : null,
+            call: this.call?.with(typeVars),
+            construct: this.construct?.with(typeVars),
         });
     }
 }
 
 
 export class union extends TypeClass {
-    type: 'union';
-    static type: 'union';
+    type ='union';
+    static type ='union';
     types: Type[];
     tagIndex: number = -1;
     constructor(...types: Type[]) {
@@ -362,8 +405,8 @@ export class union extends TypeClass {
 }
 
 export class intersection extends TypeClass {
-    type: 'intersection';
-    static type: 'intersection';
+    type ='intersection';
+    static type ='intersection';
     types: Type[];
     constructor(...types: Type[]) {
         super();

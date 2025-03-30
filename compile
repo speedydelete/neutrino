@@ -1,4 +1,0 @@
-#!/bin/sh
-rm app.c
-node jslib/cli.js app $1 app.c
-gcc -Wall -Werror -Wpedantic -Isrc/js/builtins app.c

@@ -3,12 +3,11 @@ import type * as bt from '@babel/types';
 import * as parser from '@babel/parser';
 import * as t from './types';
 import {Type} from './types';
+import {highlight} from './simple_highlighter';
 import * as fs from 'node:fs';
 
 
-const TEMPLATE_CODE = fs.readFileSync('template.c').toString();
-
-const BUILTIN_CODE = fs.readFileSync('builtins/index.ts').toString();
+const BUILTIN_CODE = fs.readFileSync('./builtins/index.ts').toString();
 const BUILTIN_OPTIONS = {
     filename: 'builtins/index.ts',
     typescript: true,
@@ -17,7 +16,7 @@ const BUILTIN_OPTIONS = {
 
 class CompilerError extends Error {
 
-    [Symbol.toStringTag]: 'CompilerError';
+    [Symbol.toStringTag] = 'CompilerError';
 
     compiler: Compiler;
     type: string;
@@ -49,10 +48,18 @@ class CompilerError extends Error {
         }
     }
 
-    toString() {
-        let out = `${this.type}: ${this.message} (at ${this.file}${this.line}:${this.col})`;
+    toString(): string {
+        let out = `${this.type}: ${this.message} (at ${this.file}:${this.line}:${this.col})\n`;
         out += '    ' + this.rawLine + '\n';
         out += '    ' + ' '.repeat(this.col) + '^'.repeat(this.endCol - this.col) + ' (here)';
+        return out;
+    }
+
+    toStringColors(): string {
+        let out = `\x1b[91m${this.type}\x1b[0m: ${this.message} (at ${this.file}:${this.line}:${this.col})\n`;
+        out += '    ' + highlight(this.rawLine) + '\n';
+        out += '    ' + ' '.repeat(this.col) + '^'.repeat(this.endCol - this.col) + ' (here)';
+        return out;
     }
 
 }
@@ -143,16 +150,18 @@ export class Compiler {
     vars: VariableMap;
     code: string | null = null;
     currentNode: bt.Node | null = null;
-    strictMode: boolean;
+    strictMode: boolean = false;
     thisType: Type = t.undefined;
 
     constructor(options: CompilerOptions = {}) {
         this.options = options;
         this.vars = new VariableMap(this);
         if (options.includeBuiltins ?? true) {
+            this.code = BUILTIN_CODE;
             for (let node of this.parse(BUILTIN_CODE, BUILTIN_OPTIONS).body) {
                 this.compileStatement(node);
             }
+            this.code = null;
         }
     }
 
@@ -219,7 +228,7 @@ export class Compiler {
         return '"' + out + '"';
     }
 
-    static readonly TYPE_TAGS = {
+    static readonly TYPE_TAGS: {[key: string]: number} = {
         undefined: 1,
         null: 2,
         boolean: 3,
@@ -231,7 +240,7 @@ export class Compiler {
         function: 9,
     }
 
-    static readonly INVERSE_TYPE_TAGS = {
+    static readonly INVERSE_TYPE_TAGS: {[key: number]: string} = {
         1: 'undefined',
         2: 'null',
         3: 'boolean',
@@ -305,11 +314,102 @@ export class Compiler {
         }
         this.error('TypeError', 'undefined is not a function');
     }
+    
+    parseTypeParameters(node: bt.Noop | bt.TSTypeParameterDeclaration | bt.TypeParameterDeclaration): t.typevar[] {
+        if (node.type === 'Noop') {
+            return [];
+        } else if (node.type === 'TypeParameterDeclaration') {
+            this.error('SyntaxError', 'Flow is not suported');
+        } else {
+            let out: t.typevar[] = [];
+            for (let param of node.params) {
+                let constraint = param.constraint ? this.parseType(param.constraint) : null;
+                let defaultValue = param.default ? this.parseType(param.default) : null;
+                out.push(new t.typevar(param.name, constraint, defaultValue));
+            }
+            return out;
+        }
+    }
 
-    parseObjectType(node: bt.TSTypeElement[]): Type {
+    parseParameters(parameters: (bt.Identifier | bt.RestElement | bt.Pattern)[]): [[string, Type][], string | null] {
+        let params: [string, Type][] = [];
+        let restName: string | null = null;
+        for (let arg of parameters) {
+            if (arg.type === 'Identifier') {
+                if (!arg.typeAnnotation) {
+                    this.error('SyntaxError', 'Function arguments must have type annotations');
+                }
+                params.push([arg.name, this.parseType(arg.typeAnnotation)]);
+            } else if (arg.type === 'RestElement') {
+                if (arg.argument.type !== 'Identifier') {
+                    this.error('SyntaxError', 'Destructuring is not supported');
+                }
+                restName = arg.argument.name;
+            } else {
+                this.error('SyntaxError', 'Destructuring is not supported');
+            }
+        }
+        return [params, restName];
+    }
+
+    parseObjectType(nodes: bt.TSTypeElement[]): Type {
+        let out = new t.object();
+        for (let node of nodes) {
+            this.currentNode = node;
+            if (node.type === 'TSPropertySignature' || node.type === 'TSMethodSignature') {
+                if (node.key.type !== 'Identifier') {
+                    this.error('SyntaxError', 'Computed properties in object types are not supported');
+                }
+                let value: Type;
+                if (node.type === 'TSPropertySignature') {
+                    if (!node.typeAnnotation) {
+                        this.error('SyntaxError', 'Object type keys must have type annotations');
+                    }
+                    value = this.parseType(node.typeAnnotation);
+                } else {
+                    let func = new t.functionsig();
+                    if (node.typeParameters) {
+                        func.typeVars = this.parseTypeParameters(node.typeParameters);
+                    }
+                    if (!node.typeAnnotation) {
+                        this.error('SyntaxError', 'Method signatures must have return types');
+                    }
+                    func.returnType = this.parseType(node.typeAnnotation);
+                    let [params, restName] = this.parseParameters(node.parameters);
+                    func.params = params;
+                    func.restName = restName;
+                    value = Object.assign(new t.object(), {call: func});
+                }
+                out.props[node.key.name] = value;
+            } else if (node.type === 'TSCallSignatureDeclaration' || node.type === 'TSConstructSignatureDeclaration') {
+                let func = new t.functionsig();
+                if (node.typeParameters) {
+                    func.typeVars = this.parseTypeParameters(node.typeParameters);
+                    if (node.typeParameters) {
+                        func.typeVars = this.parseTypeParameters(node.typeParameters);
+                    }
+                    if (!node.typeAnnotation) {
+                        this.error('SyntaxError', 'Method signatures must have return types');
+                    }
+                    func.returnType = this.parseType(node.typeAnnotation);
+                    let [params, restName] = this.parseParameters(node.parameters);
+                    func.params = params;
+                    func.restName = restName;
+                    if (node.type === 'TSCallSignatureDeclaration') {
+                        out.call = func;
+                    } else {
+                        out.construct = func;
+                    }
+                }
+            } else {
+                this.error('SyntaxError', 'Index signatures are not supported');
+            }
+        }
+        return out;
     }
 
     parseType(node: bt.TSType | bt.Noop | bt.TSTypeAnnotation | bt.TypeAnnotation): Type {
+        this.currentNode = node;
         if (node.type === 'Noop') {
             return t.unknown;
         } else if (node.type === 'TSTypeAnnotation') {
@@ -357,22 +457,6 @@ export class Compiler {
         }
     }
 
-    parseTypeParameters(node: bt.Noop | bt.TSTypeParameterDeclaration | bt.TypeParameterDeclaration): t.typevar[] {
-        if (node.type === 'Noop') {
-            return [];
-        } else if (node.type === 'TypeParameterDeclaration') {
-            this.error('SyntaxError', 'Flow is not suported');
-        } else {
-            let out: t.typevar[] = [];
-            for (let param of node.params) {
-                let constraint = param.constraint ? this.parseType(param.constraint) : null;
-                let defaultValue = param.default ? this.parseType(param.default) : null;
-                out.push(new t.typevar(param.name, constraint, defaultValue));
-            }
-            return out;
-        }
-    }
-
     compileType(type: Type): string {
         if (type.type === 'undefined' || type.type === 'null') {
             return 'void*';
@@ -398,9 +482,9 @@ export class Compiler {
     compileExpression(node: bt.Expression | bt.PrivateName | bt.V8IntrinsicIdentifier): [string, Type] {
         this.currentNode = node;
         if (node.type === 'Identifier') {
-            return ['v' + node.name, this.vars.get(node.name)];
+            return ['jv' + node.name, this.vars.get(node.name)];
         } else if (node.type === 'PrivateName') {
-            return ['p' + node.id.name, t.unknown];
+            return ['jp' + node.id.name, t.unknown];
         } else if (node.type === 'RegExpLiteral') {
             this.error('SyntaxError', 'RegExps are not supported');
         } else if (node.type === 'NullLiteral') {
@@ -572,9 +656,9 @@ export class Compiler {
                     if (leftType.extends(t.object) || rightType.extends(t.object)) {
                         code = `equal(${left}, ${this.getSingleTag(leftType)}, ${right}, ${this.getSingleTag(rightType)})`;
                     } else if (leftType.extends(t.string)) {
-                        code = `vNumber(5, ${left}) == ${right}`;
+                        code = `jvNumber(5, ${left}) == ${right}`;
                     } else if (rightType.extends(t.string)) {
-                        code = `${left} == vNumber(${right})`;
+                        code = `${left} == jvNumber(${right})`;
                     } else {
                         this.error('TypeError', `Unsupported types: ${leftType.type} and/or ${rightType.type}`);
                     }
@@ -607,10 +691,10 @@ export class Compiler {
                 this.error('SyntaxError', 'The pipe operator is not supported');
             } else {
                 if (!(leftType.type === 'number')) {
-                    left = `Number(${this.getSingleTag(leftType)}, ${right})`;
+                    left = `jvNumber(${this.getSingleTag(leftType)}, ${right})`;
                 }
                 if (!(rightType.type === 'number')) {
-                    left = `Number(${this.getSingleTag(leftType)}, ${right})`;
+                    left = `jvNumber(${this.getSingleTag(leftType)}, ${right})`;
                 }
                 if (node.operator === '>>' || node.operator === '<<') {
                     return [`(double)((long)${left} ${node.operator} (long)${right})`, t.number];
@@ -714,12 +798,12 @@ export class Compiler {
                 return this.compilePrimitiveMethodCall(value, type, node.callee.property.name, args);
             }
             let [callee, calleeType] = this.compileExpression(node.callee);
-            if (calleeType instanceof t.object && calleeType.returnType !== null) {
+            if (calleeType instanceof t.object && calleeType.call !== null) {
                 let out = `${callee}(${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
                 if (node.optional) {
-                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.returnType, t.undefined)];
+                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.call.returnType, t.undefined)];
                 } else {
-                    return [out, calleeType.returnType];
+                    return [out, calleeType.call.returnType];
                 }
             } else {
                 this.error('TypeError', `Object of type ${calleeType.type} is not callable`);
@@ -733,12 +817,12 @@ export class Compiler {
         } else if (node.type === 'NewExpression') {
             let args = node.arguments.map(arg => this.compileExpression(arg as bt.Expression));
             let [callee, calleeType] = this.compileExpression(node.callee);
-            if (calleeType instanceof t.object && calleeType.constructorReturnType !== null) {
+            if (calleeType instanceof t.object && calleeType.construct !== null) {
                 let out = `new(${callee}, ${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
                 if (node.optional) {
-                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.constructorReturnType, t.undefined)];
+                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.construct.returnType, t.undefined)];
                 } else {
-                    return [out, calleeType.constructorReturnType];
+                    return [out, calleeType.construct.returnType];
                 }
             } else {
                 this.error('TypeError', `Object of type ${calleeType} is not a constructor`);
@@ -771,10 +855,10 @@ export class Compiler {
                 return [out.join(''), t.any];
             } else {
                 let [tagCode, tagType] = this.compileExpression(tag);
-                if (!(tagType instanceof t.object) || tagType.returnType === null) {
+                if (!(tagType instanceof t.object) || tagType.call === null) {
                     this.error('TypeError', 'Is not callable');
                 }
-                return [tagCode + '(' + out.join(', ') + ')', tagType.returnType];
+                return [tagCode + '(' + out.join(', ') + ')', tagType.call.returnType];
             }
         } else if (node.type === 'V8IntrinsicIdentifier') {
             this.error('SyntaxError', 'Neutrino is not V8');
@@ -945,40 +1029,23 @@ export class Compiler {
             if (node.generator) {
                 this.error('SyntaxError', 'Generators are not supported');
             }
-            let params: [string, Type][] = [];
-            let restName: string | null = null;
-            for (let arg of node.params) {
-                if (arg.type === 'Identifier') {
-                    if (!arg.typeAnnotation) {
-                        this.error('SyntaxError', 'Function arguments must have type annotations');
-                    }
-                    params.push([arg.name, this.parseType(arg.typeAnnotation)]);
-                } else if (arg.type === 'RestElement') {
-                    if (arg.argument.type !== 'Identifier') {
-                        this.error('SyntaxError', 'Destructuring is not supported');
-                    }
-                    restName = arg.argument.name;
-                } else {
-                    this.error('SyntaxError', 'Destructuring is not supported');
-                }
-            }
-            if (node.returnType === null || node.returnType === undefined) {
+            let [params, restName] = this.parseParameters(node.params);
+            if (!node.returnType) {
                 this.error('SyntaxError', 'Functions must have a return type');
             }
             let type = this.vars.getType('Function').copy() as t.object;
-            type.params = params;
-            type.returnType = this.parseType(node.returnType);
-            type.constructorParams = params;
+            type.call = new t.functionsig(params, this.parseType(node.returnType));
+            type.construct = new t.functionsig(params, t.any);
             if (node.typeParameters) {
                 type.typeVars = this.parseTypeParameters(node.typeParameters);
             }
-            let start = `${this.compileType(type.returnType)} v${node.id.name}(long tags, ...) {`;
+            let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {`;
             let out = ['args_setup();'];
             for (let [name, type] of params) {
-                out.push(`${this.compileType(type)} v${name} = extract_arg()`);
+                out.push(`${this.compileType(type)} jv${name} = extract_arg()`);
             }
             if (restName !== null) {
-                out.push(`array** v${restName} = extract_rest_arg()`);
+                out.push(`array** jv${restName} = extract_rest_arg()`);
             }
             for (let statement of node.body.body) {
                 out.push(...this.compileStatement(statement).split('\n'));
@@ -1013,7 +1080,7 @@ export class Compiler {
                 topLevelVars.push(code);
             }
         }
-        let out = '\n#include <neutrino.h>\n\n';
+        let out = '\n#include "neutrino.h"\n\n';
         if (topLevelVars.length > 0) {
             out += '\n\n' + topLevelVars.join('\n\n');
         }

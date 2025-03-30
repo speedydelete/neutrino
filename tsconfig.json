@@ -9,5 +9,5 @@
         "rootDir": "./src",
         "sourceMap": true
     },
-    "files": ["src/index.ts", "src/cli.ts"]
+    "files": ["src/index.ts"]
 }
