@@ -296,7 +296,7 @@ export class Compiler {
             this.error('TypeError', `Cannot read properties of ${type.type} (reading '${method}')`);
         } else if (type.extends(t.number)) {
             if (method === 'toString') {
-                return [`Number_toString(${value})`, t.string];
+                return [`number_to_string(${value})`, t.string];
             } else if (method === 'valueOf') {
                 return [value, t.number];
             }
