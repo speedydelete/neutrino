@@ -335,7 +335,7 @@ export class Compiler {
         this.error('TypeError', 'undefined is not a function');
     }
     
-    parseTypeParameters(node: bt.Noop | bt.TSTypeParameterDeclaration | bt.TypeParameterDeclaration): t.typevar[] {
+    parseTypeParameters(node: bt.Noop | bt.TSTypeParameterDeclaration | bt.TypeParameterDeclaration, addToScope: boolean = true): t.typevar[] {
         if (node.type === 'Noop') {
             return [];
         } else if (node.type === 'TypeParameterDeclaration') {
@@ -346,6 +346,9 @@ export class Compiler {
                 let constraint = param.constraint ? this.parseType(param.constraint) : null;
                 let defaultValue = param.default ? this.parseType(param.default) : null;
                 out.push(new t.typevar(param.name, constraint, defaultValue));
+                if (addToScope) {
+                    this.vars.setType(param.name, constraint ?? t.any);
+                }
             }
             return out;
         }
@@ -389,7 +392,7 @@ export class Compiler {
                 } else {
                     let func = new t.functionsig();
                     if (node.typeParameters) {
-                        func.typeVars = this.parseTypeParameters(node.typeParameters);
+                        func.typeVars = this.parseTypeParameters(node.typeParameters, false);
                     }
                     if (!node.typeAnnotation) {
                         this.error('SyntaxError', 'Method signatures must have return types');
@@ -404,10 +407,7 @@ export class Compiler {
             } else if (node.type === 'TSCallSignatureDeclaration' || node.type === 'TSConstructSignatureDeclaration') {
                 let func = new t.functionsig();
                 if (node.typeParameters) {
-                    func.typeVars = this.parseTypeParameters(node.typeParameters);
-                    if (node.typeParameters) {
-                        func.typeVars = this.parseTypeParameters(node.typeParameters);
-                    }
+                    func.typeVars = this.parseTypeParameters(node.typeParameters, false);
                     if (!node.typeAnnotation) {
                         this.error('SyntaxError', 'Method signatures must have return types');
                     }
@@ -1067,9 +1067,6 @@ export class Compiler {
             this.pushScope();
             if (node.typeParameters) {
                 type.typeVars = this.parseTypeParameters(node.typeParameters);
-                for (let typeVar of type.typeVars) {
-                    this.vars.setType(typeVar.name, typeVar.constraint);
-                }
             }
             let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {`;
             let out = ['args_setup();'];
