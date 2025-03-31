@@ -2,7 +2,8 @@
 if [ -f .temp.c ]; then 
     rm .temp.c
 fi
-node --enable-source-maps -e 'try {
+node --enable-source-maps -e '
+try {
     const fs = require("fs");
     fs.writeFileSync(".temp.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), {filename: "'$1'"}));
 } catch (error) {

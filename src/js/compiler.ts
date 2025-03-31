@@ -187,6 +187,11 @@ export class Compiler {
         }
     }
 
+    
+    formatType(type: Type) {
+        return highlight(type.toString(), this.options.colors, true);
+    }
+
     error(type: string, message: string): never {
         if (this.currentNode !== null) {
             throw new CompilerError(this, type, message, this.currentNode.loc as bt.SourceLocation);
@@ -309,7 +314,7 @@ export class Compiler {
             if (type.type in Compiler.TYPE_TAGS) {
                 out += Compiler.TYPE_TAGS[type.type];
             } else {
-                throw new Error(`Unable to get a type tag for ${type}`);
+                throw new Error(`Unable to get a type tag for ${this.formatType(type)}`);
             }
         }
         return out + 'UL';
@@ -422,7 +427,7 @@ export class Compiler {
                 } else {
                     let func = new t.functionsig();
                     if (node.typeParameters) {
-                        func.typeVars = this.parseTypeParameters(node.typeParameters, false);
+                        func.typeVars = this.parseTypeParameters(node.typeParameters);
                     }
                     if (!node.typeAnnotation) {
                         this.error('SyntaxError', 'Method signatures must have return types');
@@ -436,20 +441,22 @@ export class Compiler {
                 out.props[node.key.name] = value;
             } else if (node.type === 'TSCallSignatureDeclaration' || node.type === 'TSConstructSignatureDeclaration') {
                 let func = new t.functionsig();
+                this.pushScope();
                 if (node.typeParameters) {
-                    func.typeVars = this.parseTypeParameters(node.typeParameters, false);
-                    if (!node.typeAnnotation) {
-                        this.error('SyntaxError', 'Method signatures must have return types');
-                    }
-                    func.returnType = this.parseType(node.typeAnnotation);
-                    let [params, restName] = this.parseParameters(node.parameters);
-                    func.params = params;
-                    func.restName = restName;
-                    if (node.type === 'TSCallSignatureDeclaration') {
-                        out.call = func;
-                    } else {
-                        out.construct = func;
-                    }
+                    func.typeVars = this.parseTypeParameters(node.typeParameters);
+                }
+                if (!node.typeAnnotation) {
+                    this.error('SyntaxError', 'Method signatures must have return types');
+                }
+                func.returnType = this.parseType(node.typeAnnotation);
+                let [params, restName] = this.parseParameters(node.parameters);
+                func.params = params;
+                func.restName = restName;
+                this.popScope();
+                if (node.type === 'TSCallSignatureDeclaration') {
+                    out.call = func;
+                } else {
+                    out.construct = func;
                 }
             } else if (node.type === 'TSIndexSignature') {
                 if (!node.typeAnnotation || !node.parameters[0].typeAnnotation) {
@@ -512,6 +519,10 @@ export class Compiler {
             return new t.union(...node.types.map(this.parseType));
         } else if (node.type === 'TSIntersectionType') {
             return new t.intersection(...node.types.map(this.parseType));
+        } else if (node.type === 'TSTupleType') {
+            let elts = node.elementTypes.map(type => this.parseType(type as bt.TSType));
+            let base = this.vars.getType('Array').with({T: new t.union(...elts)});
+            return new t.object(Object.assign((base as t.object).props, Object.fromEntries(elts.map((x, i) => [i, x]))));
         } else {
             this.astNodeTypeError(node, 'parseType');
         }
@@ -539,12 +550,12 @@ export class Compiler {
         }
     }
 
-    compileAssignment(node: bt.LVal, value: string, type: Type, declare: boolean): string {
+    compileAssignment(node: bt.LVal, value: string, type: Type, declaration: boolean, declare: boolean = false): string {
         let tempVar = this.getTempVar();
         let out: string;
         if (node.type === 'Identifier') {
             this.vars.set(node.name, type);
-            if (declare) {
+            if (declaration) {
                 out = `${this.compileType(type)} ${node.name} = ${value};\n`;
             } else {
                 out = `${node.name} = ${value}`;
@@ -558,7 +569,7 @@ export class Compiler {
                     }
                     let value = `get_key(${tempVar}, ${this.compileString(prop.key.name)})`;
                     let valueType = (type as t.object).props[prop.key.name];
-                    out += this.compileAssignment(prop.value as bt.LVal, value, valueType, declare);
+                    out += this.compileAssignment(prop.value as bt.LVal, value, valueType, declaration);
                 } else {
                     this.error('SyntaxError', 'Rest elements in object destructuring assignments are not supported');
                 }
@@ -752,7 +763,7 @@ export class Compiler {
                     } else if (leftType.type === 'undefined' || leftType.type === 'null') {
                         code = 'true';
                     } else {
-                        this.error('TypeError', `Unsupported operand type for equality: ${leftType.type}`);
+                        this.error('TypeError', `Unsupported operand type for equality: ${this.formatType(leftType)}`);
                     }
                 } else if (isStrict) {
                     code = 'false';
@@ -766,7 +777,7 @@ export class Compiler {
                     } else if (rightType.extends(t.string)) {
                         code = `${left} == jvNumber(${right})`;
                     } else {
-                        this.error('TypeError', `Unsupported types: ${leftType.type} and/or ${rightType.type}`);
+                        this.error('TypeError', `Unsupported types: ${this.formatType(leftType)} and/or ${this.formatType(rightType)}`);
                     }
                 }
                 if (node.operator === '!=') {
@@ -832,7 +843,7 @@ export class Compiler {
                     prop = this.compileString(left.property.name);
                     let propType = (objectType as t.object).props[left.property.name];
                     if (!propType.extends(rightType)) {
-                        this.error('TypeError', `Cannot assign value of type ${rightType} to property of type ${propType}`)
+                        this.error('TypeError', `Cannot assign value of type ${this.formatType(rightType)} to property of type ${this.formatType(propType)}`)
                     }
                 } else {
                     prop = this.compileExpression(left.property)[0];
@@ -869,7 +880,7 @@ export class Compiler {
                 out = `get_key(${object}, ${this.compileString(prop)})`
                 type = (objectType as t.object).props[prop];
                 if (type === undefined) {
-                    this.error('TypeError', `Property ${prop} does not exist on type ${objectType}`);
+                    this.error('TypeError', `Property ${prop} does not exist on type ${this.formatType(objectType)}`);
                 }
             } else {
                 let [prop, propType] = this.compileExpression(node.property)[0];
@@ -902,7 +913,7 @@ export class Compiler {
                     return [out, calleeType.call.returnType];
                 }
             } else {
-                this.error('TypeError', `Object of type ${calleeType.type} is not callable`);
+                this.error('TypeError', `Object of type ${this.formatType(calleeType)} is not callable`);
             }
         } else if (node.type === 'SequenceExpression') {
             let exprs = node.expressions.map(this.compileExpression);
@@ -921,7 +932,7 @@ export class Compiler {
                     return [out, calleeType.construct.returnType];
                 }
             } else {
-                this.error('TypeError', `Object of type ${calleeType} is not a constructor`);
+                this.error('TypeError', `Object of type ${this.formatType(calleeType)} is not a constructor`);
             }
         } else if (node.type === 'DoExpression') {
             this.error('SyntaxError', 'Do statements are not supported');
@@ -952,7 +963,7 @@ export class Compiler {
             } else {
                 let [tagCode, tagType] = this.compileExpression(tag);
                 if (!(tagType instanceof t.object) || tagType.call === null) {
-                    this.error('TypeError', 'Is not callable');
+                    this.error('TypeError', `Value of type ${this.formatType(tagType)} is not callable`);
                 }
                 return [tagCode + '(' + out.join(', ') + ')', tagType.call.returnType];
             }
@@ -962,7 +973,7 @@ export class Compiler {
             let [expr, exprType] = this.compileExpression(node.expression);
             let type = this.parseType(node.typeAnnotation);
             if (!exprType.extends(type)) {
-                this.error('TypeError', `Value of type ${exprType} does not satisfy constraint of ${type}`)
+                this.error('TypeError', `Value of type ${this.formatType(exprType)} does not satisfy constraint of ${type}`)
             }
             return [expr, node.type === 'TSSatisfiesExpression' ? exprType : type];
         } else if (node.type === 'TSNonNullExpression') {
@@ -994,25 +1005,7 @@ export class Compiler {
                     [value, type] = this.compileExpression(decl.init);
                 }
             }
-            if (decl.id.type === 'Identifier') {
-                if (this.vars.hasOwn(decl.id.name)) {
-                    this.error('SyntaxError', `${decl.id.name} is already declared`);
-                }
-                if (decl.id.typeAnnotation) {
-                    let annType = this.parseType(decl.id.typeAnnotation);
-                    if (!annType.extends(type)) {
-                        this.error('TypeError', `Cannot assign value of type ${type} to variable of type ${annType}`);
-                    }
-                    type = annType;
-                }
-                this.vars.set(decl.id.name, type);
-                out += `${this.compileType(type)} = ${value};\n`;
-            } else if (decl.id.type === 'ArrayPattern' || decl.id.type === 'ObjectPattern' || decl.id.type === 'AssignmentPattern') {
-                let tempVar = this.getTempVar();
-                out += `${tempVar} = `
-            } else {
-                this.astNodeTypeError(node, 'compileVariableDeclaration');
-            }
+            this.compileAssignment(decl.id, value, type, true, node.declare ?? false);
         }
         return out.trimEnd();
     }
@@ -1159,10 +1152,22 @@ export class Compiler {
         } else if (node.type === 'TypeAlias') {
             this.error('SyntaxError', 'Flow is not supported');
         } else if (node.type === 'TSTypeAliasDeclaration') {
-            this.vars.setType(node.id.name, this.parseType(node.typeAnnotation));
+            this.pushScope();
+            if (node.typeParameters) {
+                this.parseTypeParameters(node.typeParameters, true);
+            }
+            let parsed = this.parseType(node.typeAnnotation);
+            this.popScope();
+            this.vars.setType(node.id.name, parsed);
             return '';
         } else if (node.type === 'TSInterfaceDeclaration') {
-            this.vars.setType(node.id.name, this.parseObjectType(node.body.body));
+            this.pushScope();
+            if (node.typeParameters) {
+                this.parseTypeParameters(node.typeParameters, true);
+            }
+            let parsed = this.parseObjectType(node.body.body);
+            this.popScope();
+            this.vars.setType(node.id.name, parsed);
             return '';
         } else {
             this.astNodeTypeError(node, 'compileStatement');

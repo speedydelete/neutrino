@@ -28,7 +28,7 @@ const DEFAULT_COLORS: HighlightColors = {
 }
 
 
-const KEYWORDS = ['async', 'class', 'const', 'debugger', 'delete', 'extends', 'false', 'function', 'in', 'instanceof', 'new', 'null', 'of', 'super', 'this', 'true', 'typeof', 'var', 'void', 'let', 'static', 'get', 'set', 'undefined', 'Infinity', 'NaN', 'constructor', 'arguments', 'type', 'interface', 'enum', 'declare', 'namespace', 'module'];
+const KEYWORDS = ['async', 'class', 'const', 'debugger', 'delete', 'extends', 'false', 'function', 'in', 'instanceof', 'new', 'null', 'of', 'super', 'this', 'true', 'typeof', 'var', 'void', 'let', 'static', 'get', 'set', 'undefined', 'Infinity', 'NaN', 'constructor', 'arguments', 'type', 'interface', 'enum', 'declare', 'namespace', 'module', '=>'];
 const CONTROL_KEYWORDS = ['break', 'catch', 'case', 'continue', 'default', 'do', 'else', 'export', 'finally', 'for', 'from', 'if', 'import', 'return', 'switch', 'throw', 'try', 'while', 'with', 'await', 'yield'];
 const IN_TYPE_KEYWORDS = ['type', 'interface', 'enum', 'module', 'namespace'];
 const TYPE_KEYWORDS = ['keyof', 'readonly', 'infer'];
@@ -36,12 +36,11 @@ const TYPE_KEYWORDS = ['keyof', 'readonly', 'infer'];
 const BRACKET_COLORS = ['\x1b[93m', '\x1b[95m', '\x1b[34m'];
 
 
-export function highlight(code: string, colors: HighlightColors = DEFAULT_COLORS): string {
+export function highlight(code: string, colors: HighlightColors = DEFAULT_COLORS, inType: boolean = false): string {
     let out = '';
     let i = 0;
     let match: RegExpMatchArray | null;
     let bracketIndex = 0;
-    let inType = false;
     let inTypeAlias = false;
     let inTypeName = false;
     let inTypeBracketIndex = 0;
@@ -50,7 +49,7 @@ export function highlight(code: string, colors: HighlightColors = DEFAULT_COLORS
             out += ' ';
             i++;
             continue;
-        } else if (match = code.slice(i).match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/)) {
+        } else if (match = code.slice(i).match(/^([a-zA-Z_$][a-zA-Z0-9_$]*|=>)/)) {
             let text = match[0];
             i += text.length;
             let found = false;
@@ -91,7 +90,7 @@ export function highlight(code: string, colors: HighlightColors = DEFAULT_COLORS
                 }
             }
             if (inType) {
-                out += `\x1b${colors.typeIdentifier}` + text;
+                out += `\x1b[${colors.typeIdentifier}m` + text;
             } else if (code[i] === '(') {
                 out += `\x1b[${colors.function}m` + text;
             } else {

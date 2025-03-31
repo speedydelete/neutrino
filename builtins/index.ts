@@ -23,10 +23,6 @@ interface Function extends Object {
 
 declare var neutrino: {
     c(strings: string[], ...parts: any): any;
-    compiledFunctionName: string;
-    currentFunction: Function;
-    callFunction(func: Function, thisArg: any, args: any[]): any;
-    isObject(value: any): value is object;
 };
 
 
@@ -72,7 +68,7 @@ var Object: ObjectConstructor = function(value: any): object {
             return neutrino.c`create_object(get_key(${new.target}, "prototype"))`;
         } else if (value === null || value === undefined) {
             return neutrino.c`create_object(get_key(${Object}, "prototype"))`;
-        } else if (neutrino.isObject(value)) {
+        } else if (typeof value === 'object' || typeof value === 'function') {
             return value;
         } else {
             // @ts-ignore

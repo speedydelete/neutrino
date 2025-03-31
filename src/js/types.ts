@@ -349,28 +349,28 @@ export class object_ extends TypeClass {
         for (let [name, constraint, type] of this.indexes) {
             props.push(`[${name}: ${constraint}]: ${type}`);
         }
-        if (props.length === 0 && (this.call === null || this.construct === null)) {
-            if (this.call !== null) {
+        if (props.length === 0 && !(this.call && this.construct)) {
+            if (this.call) {
                 return this.call.toStringArrow();
-            } else if (this.construct !== null) {
+            } else if (this.construct) {
                 return this.construct.toStringArrow();
             } else {
                 return '{}';
             }
         }
-        if (this.call !== null) {
+        if (this.call) {
             props.push(this.call.toString());
         }
-        if (this.construct !== null) {
+        if (this.construct) {
             props.push('new ' + this.construct.toString());
         }
         let out = '{\n';
         for (let prop of props) {
             for (let line of prop.split('\n')) {
-                out += '    ' + line;
+                out += '    ' + line + '\n';
             }
         }
-        return out + '\n}';
+        return out + '}';
     }
     copy(): object_ {
         return Object.assign(new object_(this.props), {
