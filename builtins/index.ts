@@ -15,6 +15,8 @@ interface Array<T> {
     length: number;
 }
 
+type TemplateStringsArray = string[];
+
 interface Function extends Object {
     (...args: any[]): any;
     new (...args: any[]): any;
@@ -29,7 +31,7 @@ declare var neutrino: {
 var Infinity = 1/0;
 var NaN = 0/0;
 // @ts-ignore
-var undefined = neutrino.c`NULL`;
+var undefined = neutrino.c`NULL` as undefined;
 
 
 type CallableFunction = Function;
@@ -56,49 +58,77 @@ interface ObjectConstructor {
     values(obj: object): any[];
 }
 
-// @ts-ignore
-var Object: ObjectConstructor = function(value: any): object {
-    if (new.target === undefined) {
-        return new Object(value);
-    } else {
-        if (new.target !== Object) {
-            return neutrino.c`create_object(get_key(${new.target}, "prototype"))`;
-        } else if (value === null || value === undefined) {
-            return neutrino.c`create_object(get_key(${Object}, "prototype"))`;
-        } else if (typeof value === 'object' || typeof value === 'function') {
-            return value;
-        } else {
-            // @ts-ignore
-            return value;
-        }
-    }
-}
+// declare var Object: ObjectConstructor;
+// // @ts-ignore
+// Object = function(value: any): object {
+//     if (new.target === undefined) {
+//         return new Object(value);
+//     } else {
+//         if (new.target !== Object) {
+//             return neutrino.c`create_object(get_key(${new.target}, "prototype"))`;
+//         } else if (value === null || value === undefined) {
+//             return neutrino.c`create_object(get_key(${Object}, "prototype"))`;
+//         } else if (typeof value === 'object' || typeof value === 'function') {
+//             return value;
+//         } else {
+//             // @ts-ignore
+//             return value;
+//         }
+//     }
+// }
 
-Object.prototype = {
-    constructor: Object,
-    hasOwnProperty(prop) {
-        return prop in this && !(prop in neutrino.c`this->prototype`);
-    },
-    isPrototypeOf(object) {
-        return neutrino.c`is_prototype_of(this, ${object})'`;
-    },
-    toLocaleString() {
-        return this.toString();
-    },
-    toString() {
-        return '[object Object]';
-    },
-    valueOf() {
-        return this;
-    },
-};
+// Object.prototype = {
+//     constructor: Object,
+//     hasOwnProperty(prop) {
+//         return prop in this && !(prop in neutrino.c`this->prototype`);
+//     },
+//     isPrototypeOf(object) {
+//         return neutrino.c`is_prototype_of(this, ${object})'`;
+//     },
+//     toLocaleString() {
+//         return this.toString();
+//     },
+//     toString() {
+//         return '[object Object]';
+//     },
+//     valueOf() {
+//         return this;
+//     },
+// };
+
+
+// class Error {
+//     type: string;
+//     message: string;
+//     constructor(message?: string) {
+//         this.type = 'Error';
+//         this.message = message ?? '';
+//     }
+//     toString() {
+//         return `${this.type}: ${this.message}`;
+//     }
+// }
+
+// class ReferenceError extends Error {
+//     constructor(message?: string) {
+//         super(message);
+//         this.type = 'ReferenceError';
+//     }
+// }
+
+// class TypeError extends Error {
+//     constructor(message?: string) {
+//         super(message);
+//         this.type = 'TypeError';
+//     }
+// }
 
 
 interface Boolean {}
 
-function Boolean(value: any): boolean {
-    return value !== undefined && value !== null && value !== 0 && value === value && value !== '';
-}
+// function Boolean(value: any): boolean {
+//     return value !== undefined && value !== null && value !== 0 && value === value && value !== '';
+// }
 
 
 interface Number {
@@ -106,23 +136,33 @@ interface Number {
     valueOf(): number;
 }
 
-function Number(value: any): number {
-    if (value === undefined || value === null) {
-        return 0;
-    } else if (typeof value === 'boolean') {
-        return neutrino.c`${value}`;
-    } else if (typeof value === 'number') {
-        return value;
-    } else if (typeof value === 'string') {
-        return parseFloat(value);
-    } else if (typeof value === 'symbol') {
-        throw new TypeError('Cannot convert symbol to number');
-    } else if (typeof value === 'bigint') {
-        throw new TypeError('Cannot convert BigInt to number');
-    } else {
-        return neutrino.c`${Number}(object_to_primitive(value))`;
-    }
-}
+// function parseInt(value: string): number {
+//     return neutrino.c`atoi(${value})`;
+// }
+
+// function parseFloat(value: string): number {
+//     return neutrino.c`atof(${value})`;
+// }
+
+// function Number(value: any): number {
+//     if (value === undefined || value === null) {
+//         return 0;
+//     } else if (typeof value === 'boolean') {
+//         return neutrino.c`${value}`;
+//     } else if (typeof value === 'number') {
+//         return value;
+//     } else if (typeof value === 'string') {
+//         return parseFloat(value);
+//     } else if (typeof value === 'symbol') {
+//         return -1;
+//         // throw new TypeError('Cannot convert symbol to number');
+//     } else if (typeof value === 'bigint') {
+//         return -1;
+//         // throw new TypeError('Cannot convert BigInt to number');
+//     } else {
+//         return neutrino.c`${Number}(object_to_primitive(value))`;
+//     }
+// }
 
 
 interface String {
@@ -146,53 +186,16 @@ function String(value: any): string {
 }
 
 
-function Array<T>(...items: T[]): Array<T> {
-    return items;
-}
-
-interface TemplateStringsArray extends Array<string> {}
+// function Array<T>(...items: T[]): Array<T> {
+//     return items;
+// }
 
 
-function parseInt(value: string): number {
-    return neutrino.c`atoi(${value})`;
-}
-
-function parseFloat(value: string): number {
-    return neutrino.c`atof(${value})`;
-}
-
-const console = {
-    log(data: string): void {
-        neutrino.c`printf(${data})`;
-    }
-};
+// const console = {
+//     log(data: string): void {
+//         neutrino.c`printf(${data})`;
+//     }
+// };
 
 
 interface RegExp {}
-
-
-class Error {
-    type: string;
-    message: string;
-    constructor(message?: string) {
-        this.type = 'Error';
-        this.message = message ?? '';
-    }
-    toString() {
-        return `${this.type}: ${this.message}`;
-    }
-}
-
-class ReferenceError extends Error {
-    constructor(message?: string) {
-        super(message);
-        this.type = 'ReferenceError';
-    }
-}
-
-class TypeError extends Error {
-    constructor(message?: string) {
-        super(message);
-        this.type = 'TypeError';
-    }
-}

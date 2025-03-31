@@ -171,6 +171,7 @@ export class Compiler {
     currentNode: bt.Node | null = null;
     strictMode: boolean = false;
     thisType: Type = t.undefined;
+    anonymousFunctions: string[] = [];
 
     constructor(options: CompilerOptions = {}) {
         this.options = options;
@@ -308,29 +309,36 @@ export class Compiler {
     }
 
     getTypeTags(types: Type[]): string {
-        let out = 0;
+        let tags: string[] = [];
         for (let type of types) {
-            out <<= 4;
             if (type.type in Compiler.TYPE_TAGS) {
-                out += Compiler.TYPE_TAGS[type.type];
+                tags.push(Compiler.TYPE_TAGS[type.type] + 'ul');
+            } else if (type.tagIndex !== -1) {
+                tags.push(`get_type_tag(tags, ${type.tagIndex})`);
+            } else if (type.specialName === 'new.target') {
+                tags.push('new_target_tag');
             } else {
-                throw new Error(`Unable to get a type tag for ${this.formatType(type)}`);
+                this.error('NeutrinoBugError', `Unable to get a type tag for ${this.formatType(type)}`);
             }
         }
-        return out + 'UL';
+        let out = '('.repeat(tags.length);
+        for (let tag of tags) {
+            out += tag + ') << 4 + ';
+        }
+        return '(' + out.slice(0, -8) + ')';
     }
 
     getSingleTag(type: Type): string {
-        if (type instanceof t.union) {
-            if (type.tagIndex === -1) {
-                this.error('TypeError', 'Cannot perform operations on unions whose type is unknown at runtime, use type casting.');
-            } else {
-                return `get_type_tag((tags >> ${type.tagIndex * 4}) & 0xf)`;
-            }
+        if (type.specialName === 'new.target') {
+            return 'new_target_tag';
+        } else if (type.tagIndex !== -1) {
+            return `get_type_tag((tags >> ${type.tagIndex * 4}) & 0xf)`;
+        } else if (type instanceof t.union) {
+            this.error('TypeError', 'Cannot perform operations on unions whose type is unknown at runtime, use type casting.');
         } else if (type.type in Compiler.TYPE_TAGS) {
             return String(Compiler.TYPE_TAGS[type.type]);
         } else {
-            throw new Error(`Unable to get a type tag for ${type}`);
+            this.error('NeutrinoBugError', `Unable to get a type tag for ${this.formatType(type)}`);
         }
     }
 
@@ -389,25 +397,31 @@ export class Compiler {
         }
     }
 
-    parseParameters(parameters: (bt.Identifier | bt.RestElement | bt.Pattern)[]): [[string, Type][], string | null] {
+    parseParameters(parameters: (bt.Identifier | bt.RestElement | bt.Pattern)[]): [[string, Type][], null | [string, Type]] {
         let params: [string, Type][] = [];
-        let restName: string | null = null;
-        for (let arg of parameters) {
+        let restParam: null | [string, Type] = null;
+        for (let i = 0; i < parameters.length; i++) {
+            let arg = parameters[i];
             if (arg.type === 'Identifier') {
                 if (!arg.typeAnnotation) {
                     this.error('SyntaxError', 'Function arguments must have type annotations');
                 }
-                params.push([arg.name, this.parseType(arg.typeAnnotation)]);
+                let type = this.parseType(arg.typeAnnotation);
+                type.tagIndex = i;
+                params.push([arg.name, type]);
             } else if (arg.type === 'RestElement') {
                 if (arg.argument.type !== 'Identifier') {
-                    this.error('SyntaxError', 'Destructuring is not supported');
+                    this.error('SyntaxError', 'Destructuring is not supported for rest parameters');
                 }
-                restName = arg.argument.name;
+                if (!arg.typeAnnotation) {
+                    this.error('SyntaxError', 'Rest parameters must have type annotatin');
+                }
+                restParam = [arg.argument.name, this.parseType(arg.typeAnnotation)];
             } else {
-                this.error('SyntaxError', 'Destructuring is not supported');
+                this.error('SyntaxError', 'Destructuring is not supported for parameters');
             }
         }
-        return [params, restName];
+        return [params, restParam];
     }
 
     parseObjectType(nodes: bt.TSTypeElement[]): Type {
@@ -433,9 +447,9 @@ export class Compiler {
                         this.error('SyntaxError', 'Method signatures must have return types');
                     }
                     func.returnType = this.parseType(node.typeAnnotation);
-                    let [params, restName] = this.parseParameters(node.parameters);
+                    let [params, restParam] = this.parseParameters(node.parameters);
                     func.params = params;
-                    func.restName = restName;
+                    func.restParam = restParam;
                     value = Object.assign(new t.object(), {call: func});
                 }
                 out.props[node.key.name] = value;
@@ -449,9 +463,9 @@ export class Compiler {
                     this.error('SyntaxError', 'Method signatures must have return types');
                 }
                 func.returnType = this.parseType(node.typeAnnotation);
-                let [params, restName] = this.parseParameters(node.parameters);
+                let [params, restParam] = this.parseParameters(node.parameters);
                 func.params = params;
-                func.restName = restName;
+                func.restParam = restParam;
                 this.popScope();
                 if (node.type === 'TSCallSignatureDeclaration') {
                     out.call = func;
@@ -486,9 +500,9 @@ export class Compiler {
         } else if (node.type === 'TSIntrinsicKeyword') {
             this.error('SyntaxError', 'The intrinsic keyword is not supported');
         } else if (node.type === 'TSAnyKeyword') {
-            return t.any;
+            return new t.any();
         } else if (node.type === 'TSUnknownKeyword') {
-            return t.unknown;
+            return new t.unknown();
         } else if (node.type === 'TSUndefinedKeyword') {
             return t.undefined;
         } else if (node.type === 'TSNeverKeyword') {
@@ -554,7 +568,7 @@ export class Compiler {
         let tempVar = this.getTempVar();
         let out: string;
         if (node.type === 'Identifier') {
-            this.vars.set(node.name, type);
+            this.vars.set(node.name, node.typeAnnotation ? this.parseType(node.typeAnnotation) : type);
             if (declaration) {
                 out = `${this.compileType(type)} ${node.name} = ${value};\n`;
             } else {
@@ -703,13 +717,21 @@ export class Compiler {
         } else if (node.type === 'TupleExpression') {
             this.error('SyntaxError', 'Tuples are not supported');
         } else if (node.type === 'FunctionExpression') {
-            this.error('SyntaxError', 'Anonymous functions are not supported');
+            let name = `__anonymous_${this.anonymousFunctions.length}`;
+            if (!node.id) {
+                node.id = {
+                    type: 'Identifier',
+                    name: `__anonymous_${this.anonymousFunctions.length}`,
+                };
+            }
+            this.anonymousFunctions.push(this.compileStatement(Object.assign(node, {type: 'FunctionDeclaration'} as const)));
+            return ['jv' + name, this.vars.get(name)];
         } else if (node.type === 'UnaryExpression') {
             let [expr, type] = this.compileExpression(node.argument);
             if (node.prefix) {
                 if (node.operator === 'typeof') {
-                    if (type instanceof t.union) {
-                        return [`typeof_from_tag(argument_types[${type.tagIndex}]))`, t.string];
+                    if (type.tagIndex !== -1) {
+                        return [`typeof_from_tag(tags[${type.tagIndex}]))`, t.string];
                     } else if (type.type === 'undefined') {
                         return ['"undefined"', new t.string('undefined')];
                     } else if (type.type === 'object' || type.type === 'null') {
@@ -750,10 +772,14 @@ export class Compiler {
         } else if (node.type === 'BinaryExpression') {
             let [left, leftType] = this.compileExpression(node.left as bt.Expression);
             let [right, rightType] = this.compileExpression(node.right);
+            this.currentNode = node;
             if (node.operator === '==' || node.operator === '!=' || node.operator === '===' || node.operator === '!==') {
                 let code: string;
                 let isStrict = node.operator.length === 3;
-                if (leftType instanceof t.union || rightType instanceof t.union) {
+                if (leftType.tagIndex !== -1 || rightType.tagIndex !== -1) {
+                    if (rightType.type === 'undefined') {
+                        return [`${left} == NULL`, t.boolean];
+                    }
                     code = `${isStrict ? 'strict_' : ''}equal(tags, ${left}, ${this.getSingleTag(leftType)}, ${right}, ${this.getSingleTag(rightType)})`;
                 } else if (leftType.type === rightType.type) {
                     if (leftType.type === 'boolean' || leftType.type === 'number' || leftType.type === 'object') {
@@ -943,9 +969,9 @@ export class Compiler {
         } else if (node.type === 'TemplateLiteral') {
             let out: string[] = [];
             for (let i = 0; i < node.quasis.length; i++) {
-                out.push(node.quasis[i / 2].value.raw);
+                out.push(node.quasis[i].value.raw);
                 if (i !== node.quasis.length - 1) {
-                    out.push(`String(${this.compileExpression(node.expressions[i / 2 - 1] as bt.Expression)[0]})`);
+                    out.push(`String(${this.compileExpression(node.expressions[i] as bt.Expression)[0]})`);
                 }
             }
             return [`default_template_tag(${out.length}, ${out.join(', ')})`, t.string];
@@ -958,6 +984,7 @@ export class Compiler {
                     out.push(this.compileExpression(quasi)[0]);
                 }
             }
+            console.log(out);
             if (tag.type === 'MemberExpression' && tag.object.type === 'Identifier' && tag.object.name === 'neutrino' && tag.property.type === 'Identifier' && tag.property.name === 'c') {
                 return [out.join(''), t.any];
             } else {
@@ -967,13 +994,21 @@ export class Compiler {
                 }
                 return [tagCode + '(' + out.join(', ') + ')', tagType.call.returnType];
             }
+        } else if (node.type === 'MetaProperty') {
+            let meta = node.meta.name;
+            let prop = node.property.name;
+            if (meta === 'new' && prop === 'target') {
+                return ['new_target', Object.assign(new t.union(t.object, t.undefined), {specialName: 'new.target'})];
+            } else {
+                this.error('SyntaxError', `Unrecognized meta property ${meta}.${prop}`);
+            }
         } else if (node.type === 'V8IntrinsicIdentifier') {
             this.error('SyntaxError', 'Neutrino is not V8');
         } else if (node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion' || node.type === 'TSSatisfiesExpression') {
             let [expr, exprType] = this.compileExpression(node.expression);
             let type = this.parseType(node.typeAnnotation);
             if (!exprType.extends(type)) {
-                this.error('TypeError', `Value of type ${this.formatType(exprType)} does not satisfy constraint of ${type}`)
+                this.error('TypeError', `Value of type ${this.formatType(exprType)} does not satisfy constraint of ${this.formatType(type)}`)
             }
             return [expr, node.type === 'TSSatisfiesExpression' ? exprType : type];
         } else if (node.type === 'TSNonNullExpression') {
@@ -1044,6 +1079,17 @@ export class Compiler {
             } else {
                 return 'goto ' + node.label.name + ';';
             }
+        } else if (node.type === 'IfStatement') {
+            let out = 'if (' + this.compileExpression(node.test) + ') ' + this.compileStatement(node.consequent);
+            if (node.alternate) {
+                if (node.consequent.type === 'BlockStatement') {
+                    out += ' else ';
+                } else {
+                    out += '\nelse ';
+                }
+                out += this.compileStatement(node.alternate);
+            }
+            return out;
         } else if (node.type === 'SwitchStatement') {
             let out = 'switch (' + this.compileExpression(node.discriminant) + ') {';
             // todo: finish this
@@ -1131,11 +1177,15 @@ export class Compiler {
             let type = this.vars.getType('Function').copy() as t.object;
             type.call = new t.functionsig(params, this.parseType(node.returnType));
             type.construct = new t.functionsig(params, t.any);
+            this.vars.set(node.id.name, type);
             this.pushScope();
+            for (let [name, type] of params) {
+                this.vars.set(name, type);
+            }
             if (node.typeParameters) {
                 type.typeVars = this.parseTypeParameters(node.typeParameters);
             }
-            let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {`;
+            let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {\n`;
             let out = ['start_args();'];
             for (let [name, type] of params) {
                 out.push(`get_arg(${this.compileType(type)}, jv${name});`);
@@ -1183,11 +1233,19 @@ export class Compiler {
             let code = this.compileStatement(node);
             if (node.type === 'VariableDeclaration') {
                 topLevelVars.push(code);
+            } else if (node.type === 'FunctionDeclaration') {
+                funcs.push(code);
+            } else {
+                topLevel.push(code);
             }
         }
         let out = '\n#include "neutrino.h"\n\n';
         if (topLevelVars.length > 0) {
             out += '\n\n' + topLevelVars.join('\n\n');
+        }
+        if (this.anonymousFunctions.length > 0) {
+            out += '\n\n' + this.anonymousFunctions.join('\n\n');
+            this.anonymousFunctions = [];
         }
         if (funcs.length > 0) {
             out += '\n\n' + funcs.join('\n\n');
@@ -1195,7 +1253,7 @@ export class Compiler {
         if (topLevel.length > 0) {
             out += '\n\nint main(int argc, char** argv) {\n';
             for (let lines of topLevel) {
-                for (let line of lines) {
+                for (let line of lines.split('\n')) {
                     out += '    ' + line + '\n';
                 }
             }

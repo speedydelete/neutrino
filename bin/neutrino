@@ -13,4 +13,4 @@ try {
         console.error(error);
     }
     process.exit(1);
-}' && gcc -Wall -Werror -Wpedantic -Isrc/js/builtins .temp.c
+}' && gcc -Wall -Werror -Wpedantic -Ibuiltins .temp.c

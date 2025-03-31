@@ -6,6 +6,10 @@ export abstract class TypeClass {
     static typeVars: typevar[] = [];
     resolvedTypeVars: typevar[] = [];
     static resolvedTypeVars: typevar[] = [];
+    tagIndex: number = -1;
+    static tagIndex: number = -1;
+    specialName: string | null = null;
+    static specialName: string | null = null;
     constructor(...args: unknown[]) {}
     extends(other: Type): boolean {
         return other.doesExtend(this);
@@ -30,6 +34,7 @@ export abstract class TypeClass {
         let out: Type = new (this.constructor)();
         out.typeVars = this.typeVars;
         out.resolvedTypeVars = this.resolvedTypeVars;
+        out.tagIndex = this.tagIndex;
         return out;
     }
     static copy(): Type {
@@ -61,8 +66,8 @@ export abstract class TypeClass {
 }
 
 export class typevar extends TypeClass {
-    type ='typevar';
-    static type ='typevar';
+    type = 'typevar';
+    static type = 'typevar';
     name: string;
     constraint: Type;
     default: Type | null;
@@ -93,55 +98,64 @@ export type Type = TypeClass | typeof TypeClass;
 
 
 export class any_ extends TypeClass {
-    type ='any';
-    static type ='any';
+    type = 'any';
+    static type = 'any';
     extends(other: Type): boolean {
         return true;
     }
     doesExtend(other: Type): boolean {
         return true;
     }
+    static extends(other: Type): boolean {
+        return true;
+    }
+    static doesExtend(other: Type): boolean {
+        return true;
+    }
 }
 
 export class unknown_ extends TypeClass {
-    type ='unknown';
-    static type ='unknown';
+    type = 'unknown';
+    static type = 'unknown';
     doesExtend(other: Type): boolean {
+        return true;
+    }
+    static doesExtend(other: Type): boolean {
         return true;
     }
 }
 
 export class never_ extends TypeClass {
-    type ='never';
-    static type ='never';
-    doesExtend(other: Type): boolean {
+    type = 'never';
+    static type = 'never';
+    static doesExtend(other: Type): boolean {
         return false;
     }
 }
 
 
 export class undefined_ extends TypeClass {
-    type ='undefined';
-    static type ='undefined';
+    type = 'undefined';
+    static type = 'undefined';
 }
 
 export class void_ extends TypeClass {
-    type ='void';
-    static type ='void';
-    doesExtend(other: Type): boolean {
+    type = 'void';
+    static type = 'void';
+    static doesExtend(other: Type): boolean {
         return other.type === 'void' || other.type === 'undefined';
     }
 }
 
 export class null_ extends TypeClass {
-    type ='null';
-    static type ='null';
+    type = 'null';
+    static type = 'null';
 }
 
 
 export class boolean_ extends TypeClass {
-    type ='boolean';
-    static type ='boolean';
+    type = 'boolean';
+    static type = 'boolean';
     value: boolean;
     constructor(value: boolean) {
         super();
@@ -162,8 +176,8 @@ export const false_ = new boolean_(false);
 
 
 export class number_ extends TypeClass {
-    type ='number';
-    static type ='number';
+    type = 'number';
+    static type = 'number';
     value: number;
     constructor(value: number) {
         super();
@@ -230,8 +244,8 @@ export class string_ extends TypeClass {
 }
 
 export class symbol_ extends TypeClass {
-    type ='symbol';
-    static type ='symbol';
+    type = 'symbol';
+    static type = 'symbol';
     value: string;
     constructor(value: string) {
         super();
@@ -249,8 +263,8 @@ export class symbol_ extends TypeClass {
 }
 
 export class bigint_ extends TypeClass {
-    type ='bigint';
-    static type ='bigint';
+    type = 'bigint';
+    static type = 'bigint';
     value: bigint;
     constructor(value: bigint) {
         super();
@@ -268,16 +282,16 @@ export class bigint_ extends TypeClass {
 }
 
 export class functionsig extends TypeClass {
-    type ='functionsig';
-    static type ='functionsig';
+    type = 'functionsig';
+    static type = 'functionsig';
     params: [string, Type][] = [];
     returnType: Type;
-    restName: string | null;
-    constructor(params?: [string, Type][], returnType?: Type, restName?: string | null) {
+    restParam: [string, Type] | null;
+    constructor(params?: [string, Type][], returnType?: Type, restParam?: [string, Type] | null) {
         super();
         this.params = params ?? [];
         this.returnType = returnType ?? any_;
-        this.restName = restName ?? null;
+        this.restParam = restParam ?? null;
     }
     doesExtend(other: Type): boolean {
         if (!(other instanceof functionsig)) {
@@ -291,7 +305,7 @@ export class functionsig extends TypeClass {
                 return false;
             }
         }
-        return this.returnType.doesExtend(other.returnType) && this.restName === other.restName; 
+        return this.returnType.doesExtend(other.returnType) && this.restParam === other.restParam; 
     }
     toString(): string {
         return `(${this.params.map(([name, type]) => `${name}: ${type}`).join(', ')}): ${this.returnType}`;
@@ -302,13 +316,13 @@ export class functionsig extends TypeClass {
     with(typeVars: {[key: string]: Type}): Type {
         let params = this.params.map(([name, type]) => [name, type.with(typeVars)]) as [string, Type][];
         let returnType = this.returnType.with(typeVars);
-        return new functionsig(params, returnType, this.restName);
+        return new functionsig(params, returnType, this.restParam);
     }
 }
 
 export class object_ extends TypeClass {
-    type ='object';
-    static type ='object';
+    type = 'object';
+    static type = 'object';
     props: {[key: PropertyKey]: Type};
     indexes: [string, Type, Type][] = [];
     call: functionsig | null = null;
@@ -393,8 +407,8 @@ export class object_ extends TypeClass {
 
 
 export class union extends TypeClass {
-    type ='union';
-    static type ='union';
+    type = 'union';
+    static type = 'union';
     types: Type[];
     tagIndex: number = -1;
     constructor(...types: Type[]) {
@@ -417,8 +431,8 @@ export class union extends TypeClass {
 }
 
 export class intersection extends TypeClass {
-    type ='intersection';
-    static type ='intersection';
+    type = 'intersection';
+    static type = 'intersection';
     types: Type[];
     constructor(...types: Type[]) {
         super();

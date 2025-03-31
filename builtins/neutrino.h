@@ -56,21 +56,6 @@ object* create_object(object* proto, int length, ...);
 void* get_key(object* obj, char* key);
 void* get_symbol(object* obj, long key);
 
-#define create_prop(name, key, value) \
-    name = safe_malloc(sizeof(struct property) - sizeof(void*)); \
-    name->next = NULL; \
-    name->key = key; \
-    name->is_accessor = false; \
-    name->value = value;
-
-#define create_accessor(name, key, get, set) \
-    name = safe_malloc(sizeof(struct property)); \
-    name->next = NULL; \
-    name->key = key; \
-    name->is_accessor = true; \
-    name->get = get; \
-    name->set = set;
-
 void set_key(object* obj, char* key, void* value);
 void set_symbol(object* obj, long key, void* value);
 void set_accessor(object* obj, char* key, void (*get)(struct object*), void (*set)(struct object*, void*));
