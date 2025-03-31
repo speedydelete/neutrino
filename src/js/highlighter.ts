@@ -1,14 +1,42 @@
 
-const KEYWORDS = ['async', 'class', 'const', 'debugger', 'delete', 'extends', 'false', 'function', 'in', 'instanceof', 'new', 'null', 'super', 'this', 'true', 'typeof', 'var', 'void', 'let', 'static', 'undefined', 'Infinity', 'NaN', 'constructor', 'type', 'interface', 'enum', 'declare', 'get', 'module', 'namespace', 'set'];
+export interface HighlightColors {
+    brackets: string[],
+    identifier: string;
+    typeIdentifier: string;
+    function: string;
+    keyword: string;
+    controlKeyword: string;
+    typeKeyword: string;
+    number: string;
+    string: string;
+    comment: string;
+    other: string;
+}
 
-const CONTROL_KEYWORDS = ['break', 'catch', 'case', 'continue', 'default', 'do', 'else', 'export', 'finally', 'for', 'if', 'import', 'return', 'switch', 'throw', 'try', 'while', 'with', 'await', 'yield'];
+const DEFAULT_COLORS: HighlightColors = {
+    brackets: ['93', '95', '34'],
+    identifier: '96',
+    typeIdentifier: '32',
+    function: '93',
+    keyword: '34',
+    controlKeyword: '95',
+    typeKeyword: '34',
+    number: '32',
+    string: '5;214',
+    comment: '92',
+    other: '0',
+}
 
+
+const KEYWORDS = ['async', 'class', 'const', 'debugger', 'delete', 'extends', 'false', 'function', 'in', 'instanceof', 'new', 'null', 'of', 'super', 'this', 'true', 'typeof', 'var', 'void', 'let', 'static', 'get', 'set', 'undefined', 'Infinity', 'NaN', 'constructor', 'arguments', 'type', 'interface', 'enum', 'declare', 'namespace', 'module'];
+const CONTROL_KEYWORDS = ['break', 'catch', 'case', 'continue', 'default', 'do', 'else', 'export', 'finally', 'for', 'from', 'if', 'import', 'return', 'switch', 'throw', 'try', 'while', 'with', 'await', 'yield'];
 const IN_TYPE_KEYWORDS = ['type', 'interface', 'enum', 'module', 'namespace'];
+const TYPE_KEYWORDS = ['keyof', 'readonly', 'infer'];
 
 const BRACKET_COLORS = ['\x1b[93m', '\x1b[95m', '\x1b[34m'];
 
 
-export function highlight(code: string): string {
+export function highlight(code: string, colors: HighlightColors = DEFAULT_COLORS): string {
     let out = '';
     let i = 0;
     let match: RegExpMatchArray | null;
@@ -17,7 +45,7 @@ export function highlight(code: string): string {
     let inTypeAlias = false;
     let inTypeName = false;
     let inTypeBracketIndex = 0;
-    main: while (i < code.length) {
+    while (i < code.length) {
         if (code[i] === ' ') {
             out += ' ';
             i++;
@@ -25,9 +53,10 @@ export function highlight(code: string): string {
         } else if (match = code.slice(i).match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/)) {
             let text = match[0];
             i += text.length;
+            let found = false;
             for (let keyword of KEYWORDS) {
                 if (text === keyword) {
-                    out += '\x1b[34m' + text;
+                    out += `\x1b[${colors.keyword}m` + text;
                     if (IN_TYPE_KEYWORDS.includes(keyword)) {
                         inType = true;
                         inTypeBracketIndex = bracketIndex;
@@ -37,21 +66,36 @@ export function highlight(code: string): string {
                             inTypeName = true;
                         }
                     }
-                    continue main;
+                    found = true;
+                    break;
                 }
+            }
+            if (found) {
+                continue;
             }
             for (let keyword of CONTROL_KEYWORDS) {
                 if (text === keyword) {
-                    out += '\x1b[95m' + text;
-                    continue main;
+                    out += `\x1b[${colors.controlKeyword}m` + text;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                continue;
+            }
+            if (inType) {
+                for (let keyword of TYPE_KEYWORDS) {
+                    if (text === keyword) {
+                        out += `\x1b[${colors.typeKeyword}m` + text;
+                    }
                 }
             }
             if (inType) {
-                out += '\x1b[32m' + text;
+                out += `\x1b${colors.typeIdentifier}` + text;
             } else if (code[i] === '(') {
-                out += '\x1b[93m' + text;
+                out += `\x1b[${colors.function}m` + text;
             } else {
-                out += '\x1b[96m' + text;
+                out += `\x1b[${colors.identifier}m` + text;
             }
             if (inType && inTypeName) {
                 inType = false;
@@ -75,7 +119,7 @@ export function highlight(code: string): string {
             out += '\x1b[32m' + match[0];
             i += match[0].length;
             if (code[i] === 'n') {
-                out += '\x1b[34mn';
+                out += `\x1b[${colors.number}mn`;
                 i++;
             }
         } else if (code[i] === '"' || code[i] === "'") {
@@ -85,7 +129,7 @@ export function highlight(code: string): string {
                 string += code[i];
                 i++;
             } while (i < code.length && !(code[i] === endChar && code[i - 1] !== '\\'));
-            out += '\x1b[38;5;214m' + string + endChar;
+            out += `\x1b[38;${colors.string}m` + string + endChar;
             i++;
         } else if (code[i] === '/' && code[i + 1] === '/') {
             let text = '';
@@ -93,16 +137,16 @@ export function highlight(code: string): string {
                 text += code[i];
                 i++;
             }
-            out += '\x1b[92m' + text;
+            out += `\x1b[${colors.comment}m` + text;
         } else if (code[i] === '/' && code[i + 1] === '*') {
             let text = '';
             while ((code[i] !== '*' && code[i + 1] !== '/') && i > code.length) {
                 text += code[i];
                 i++;
             }
-            out += '\x1b[92m' + text;
+            out += `\x1b[${colors.comment}m` + text;
         } else {
-            out += '\x1b[0m' + code[i];
+            out += `\x1b[${colors.other}m` + code[i];
             if (code[i] === ':') {
                 inType = true;
                 inTypeBracketIndex = bracketIndex;

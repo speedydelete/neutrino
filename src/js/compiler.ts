@@ -3,8 +3,9 @@ import * as bt from '@babel/types';
 import * as parser from '@babel/parser';
 import * as t from './types';
 import {Type} from './types';
-import {highlight} from './simple_highlighter';
+import {highlight, HighlightColors} from './highlighter';
 import * as fs from 'node:fs';
+// import * as path from 'node:path';
 
 
 const BUILTIN_CODE = fs.readFileSync('./builtins/index.ts').toString();
@@ -12,6 +13,26 @@ const BUILTIN_OPTIONS = {
     filename: 'builtins/index.ts',
     typescript: true,
 };
+
+
+// type RegularFile = string;
+// type Directory = {[key: string]: File | undefined};
+// type File = Directory | RegularFile;
+
+// function extractFiles(dir: string): Directory {
+//     let out: Directory = {};
+//     for (let subPath of fs.readdirSync(dir)) {
+//         let fullPath = path.join(dir, subPath);
+//         if (fs.statSync(fullPath).isDirectory()) {
+//             out[subPath] = extractFiles(fullPath);
+//         } else {
+//             out[subPath] = (fs.readFileSync(fullPath)).toString();
+//         }
+//     }
+//     return out;
+// }
+
+// let files = extractFiles(process.cwd());
 
 
 class CompilerError extends Error {
@@ -54,7 +75,7 @@ class CompilerError extends Error {
 
     toStringColors(): string {
         let out = `\x1b[91m${this.type}\x1b[0m: ${this.message} (at ${this.file}:${this.line}:${this.col})\n`;
-        out += '    ' + highlight(this.rawLine) + '\n';
+        out += '    ' + highlight(this.rawLine, this.compiler.options.colors) + '\n';
         out += '    ' + ' '.repeat(this.col) + '^'.repeat(this.endCol - this.col) + ' (here)';
         return out;
     }
@@ -138,6 +159,7 @@ export interface CompilerOptions {
     jsx?: boolean;
     async?: boolean;
     includeBuiltins?: boolean;
+    colors?: HighlightColors;
 }
 
 export class Compiler {
@@ -171,6 +193,10 @@ export class Compiler {
         } else {
             throw new Error('currentNode is null');
         }
+    }
+
+    astNodeTypeError(node: bt.Node | never, func: string): never {
+        this.error('NeutrinoBugError', `Unrecognized AST node type in ${func}: ${(node as bt.Node).type}`);
     }
 
     parse(code: string, options?: CompilerOptions): bt.Program {
@@ -228,7 +254,7 @@ export class Compiler {
     tempVarIndex: number = 0;
     getTempVar(): string {
         this.tempVarIndex++;
-        return 't' + this.tempVarIndex;
+        return 'jt' + this.tempVarIndex;
     }
 
     compileString(string: string): string {
@@ -249,27 +275,31 @@ export class Compiler {
     }
 
     static readonly TYPE_TAGS: {[key: string]: number} = {
-        undefined: 1,
-        null: 2,
-        boolean: 3,
-        number: 4,
-        string: 5,
-        symbol: 6,
-        bigint: 7,
-        object: 8,
-        function: 9,
+        undefined: 0,
+        null: 1,
+        boolean: 2,
+        number: 3,
+        string: 4,
+        symbol: 5,
+        bigint: 6,
+        object: 7,
+        function: 8,
+        tuple: 9,
+        record: 10,
     }
 
     static readonly INVERSE_TYPE_TAGS: {[key: number]: string} = {
-        1: 'undefined',
-        2: 'null',
-        3: 'boolean',
-        4: 'number',
-        5: 'string',
-        6: 'symbol',
-        7: 'bigint',
-        8: 'object',
-        9: 'function',
+        0: 'undefined',
+        1: 'null',
+        2: 'boolean',
+        3: 'number',
+        4: 'string',
+        5: 'symbol',
+        6: 'bigint',
+        7: 'object',
+        8: 'function',
+        9: 'tuple',
+        10: 'record',
     }
 
     getTypeTags(types: Type[]): string {
@@ -421,11 +451,13 @@ export class Compiler {
                         out.construct = func;
                     }
                 }
-            } else {
+            } else if (node.type === 'TSIndexSignature') {
                 if (!node.typeAnnotation || !node.parameters[0].typeAnnotation) {
                     this.error('SyntaxError', 'Index signatures must have type annotations');
                 }
                 out.indexes.push([node.parameters[0].name, this.parseType(node.parameters[0].typeAnnotation), this.parseType(node.typeAnnotation)]);
+            } else {
+                this.astNodeTypeError(node, 'parseObjectType');
             }
         }
         return out;
@@ -481,7 +513,7 @@ export class Compiler {
         } else if (node.type === 'TSIntersectionType') {
             return new t.intersection(...node.types.map(this.parseType));
         } else {
-            throw new Error(`Unrecognized AST node type in parseType: ${node.type}`);
+            this.astNodeTypeError(node, 'parseType');
         }
     }
 
@@ -495,16 +527,62 @@ export class Compiler {
         } else if (type.type === 'string') {
             return 'char*';
         } else if (type.type === 'symbol') {
-            this.error('TypeError', 'Symbols are not supported');
+            return 'long';
         } else if (type.type === 'bigint') {
-            this.error('TypeError', 'BigInts are not supported');
+            return 'mpz_t';
         } else if (type.extends(this.vars.getType('Array'))) {
-            return 'array**';
+            return 'array*';
         } else if (type.type === 'object') {
             return 'object*';
         } else {
-            throw new Error(`Unrecognized type type in compileType: ${type.type}`);
+            this.error('NeutrinoBugError', `Unrecognized type type in compileType: ${type.type}`);
         }
+    }
+
+    compileAssignment(node: bt.LVal, value: string, type: Type, declare: boolean): string {
+        let tempVar = this.getTempVar();
+        let out: string;
+        if (node.type === 'Identifier') {
+            this.vars.set(node.name, type);
+            if (declare) {
+                out = `${this.compileType(type)} ${node.name} = ${value};\n`;
+            } else {
+                out = `${node.name} = ${value}`;
+            }
+        } else if (node.type === 'ObjectPattern') {
+            out = '';
+            for (let prop of node.properties) {
+                if (prop.type === 'ObjectProperty') {
+                    if (prop.key.type !== 'Identifier') {
+                        this.error('SyntaxError', 'Computed property keys in object destructuring assignments are not supported');
+                    }
+                    let value = `get_key(${tempVar}, ${this.compileString(prop.key.name)})`;
+                    let valueType = (type as t.object).props[prop.key.name];
+                    out += this.compileAssignment(prop.value as bt.LVal, value, valueType, declare);
+                } else {
+                    this.error('SyntaxError', 'Rest elements in object destructuring assignments are not supported');
+                }
+            }
+        } else if (node.type === 'ArrayPattern') {
+            out = '';
+            for (let i = 0; i < node.elements.length; i++) {
+                let item = node.elements[i];
+                if (item === null) {
+                    continue;
+                }
+                let value = `${tempVar}->items[${i}]`;
+                let valueType = (type as t.object).props[i];
+                if (item.type === 'RestElement') {
+                    value = `array_slice(${tempVar}, ${((type as t.object).props.length as t.number).value})`;
+                    valueType = this.vars.getType('Array').with({T: type.getResolvedTypeVar('T')});
+                    item = item.argument;
+                }
+                out += this.compileAssignment(item, value, valueType, declare);
+            }
+        } else {
+            this.astNodeTypeError(node, 'compileAssignment');
+        }
+        return out;
     }
 
     compileExpression(node: bt.Expression | bt.PrivateName | bt.V8IntrinsicIdentifier): [string, Type] {
@@ -514,7 +592,7 @@ export class Compiler {
         } else if (node.type === 'PrivateName') {
             return ['jp' + node.id.name, t.unknown];
         } else if (node.type === 'RegExpLiteral') {
-            this.error('SyntaxError', 'RegExps are not supported');
+            this.error('SyntaxError', 'Regular expressions are not supported');
         } else if (node.type === 'NullLiteral') {
             return ['NULL', t.null];
         } else if (node.type === 'StringLiteral') {
@@ -534,7 +612,7 @@ export class Compiler {
         } else if (node.type === 'Import') {
             this.error('SyntaxError', 'Modules are not supported');
         } else if (node.type === 'Super') {
-            this.error('SyntaxError', 'super() is not supported');
+            this.error('SyntaxError', 'super; is not supported');
         } else if (node.type === 'ThisExpression') {
             return ['this', this.thisType];
         } else if (node.type === 'ArrowFunctionExpression') {
@@ -563,10 +641,10 @@ export class Compiler {
             }
             this.currentNode = node;
             if (elts.length === 0) {
-                return ['create_array("")', this.vars.get('Array').with({T: t.any})];
+                return ['create_array(0)', this.vars.get('Array').with({T: t.any})];
             } else {
                 return [
-                    `create_array(${this.getTypeTags(types)}, ${elts.join(', ')})`,
+                    `create_array_with_items(${elts.length}, ${elts.join(', ')})`,
                     this.vars.get('Array').with({T: new t.union(...types)})
                 ];
             }
@@ -734,19 +812,9 @@ export class Compiler {
             }
         } else if (node.type === 'AssignmentExpression') {
             let [right, rightType] = this.compileExpression(node.right);
-            let out: string;
             let left = node.left;
-            if (left.type === 'Identifier') {
-                if (!this.vars.has(left.name)) {
-                    this.error('SyntaxError', 'All variables must be declared, even in non-strict mode');
-                } else {
-                    let varType = this.vars.get(left.name);
-                    if (!varType.extends(rightType)) {
-                        this.error('TypeError', `Cannot assign value of type ${rightType} to variable of ${varType}`);
-                    }
-                    out = `v${left.name} = ${right}`;
-                }
-            } else if (left.type === 'MemberExpression' || left.type === 'OptionalMemberExpression') {
+            if (left.type === 'MemberExpression' || left.type === 'OptionalMemberExpression') {
+                let out: string;
                 let [object, objectType] = this.compileExpression(left.object);
                 if (left.type === 'OptionalMemberExpression' && (objectType.extends(t.undefined) || objectType.extends(t.null))) {
                     out = right;
@@ -774,10 +842,10 @@ export class Compiler {
                 } else {
                     out = `set_key(${object}, ${prop}, ${right}`;
                 }
+                return [out, rightType];
             } else {
-                this.error('SyntaxError', 'Destructuring is not supported');
+                return [this.compileAssignment(left, right, rightType, false), rightType];
             }
-            return [out, rightType];
         } else if (node.type === 'LogicalExpression') {
             let [left, leftType] = this.compileExpression(node.left);
             let [right, rightType] = this.compileExpression(node.right);
@@ -890,8 +958,13 @@ export class Compiler {
             }
         } else if (node.type === 'V8IntrinsicIdentifier') {
             this.error('SyntaxError', 'Neutrino is not V8');
-        } else if (node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion') {
-            return [this.compileExpression(node.expression)[0], this.parseType(node.typeAnnotation)];
+        } else if (node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion' || node.type === 'TSSatisfiesExpression') {
+            let [expr, exprType] = this.compileExpression(node.expression);
+            let type = this.parseType(node.typeAnnotation);
+            if (!exprType.extends(type)) {
+                this.error('TypeError', `Value of type ${exprType} does not satisfy constraint of ${type}`)
+            }
+            return [expr, node.type === 'TSSatisfiesExpression' ? exprType : type];
         } else if (node.type === 'TSNonNullExpression') {
             let [out, outType] = this.compileExpression(node.expression);
             if (outType instanceof t.union) {
@@ -901,12 +974,10 @@ export class Compiler {
             } else {
                 return ['false', new t.boolean(false)];
             }
-        } else if (node.type === 'TSSatisfiesExpression') {
-            this.error('SyntaxError', 'The satisfies operator is not supported');
         } else if (node.type === 'TSInstantiationExpression') {
             this.error('SyntaxError', 'Instantiation expressions are not supported');
         } else {
-            throw new Error(`Unrecognized AST node type in compileExpression: ${node.type}`);
+            this.astNodeTypeError(node, 'compileExpression');
         }
     }
 
@@ -936,8 +1007,11 @@ export class Compiler {
                 }
                 this.vars.set(decl.id.name, type);
                 out += `${this.compileType(type)} = ${value};\n`;
+            } else if (decl.id.type === 'ArrayPattern' || decl.id.type === 'ObjectPattern' || decl.id.type === 'AssignmentPattern') {
+                let tempVar = this.getTempVar();
+                out += `${tempVar} = `
             } else {
-                this.error('SyntaxError', 'Destructuring is not supported');
+                this.astNodeTypeError(node, 'compileVariableDeclaration');
             }
         }
         return out.trimEnd();
@@ -1020,7 +1094,7 @@ export class Compiler {
             } else {
                 arrayVar = right;
             }
-            let out = `array** ${arrayVar} = ${right};\n`;
+            let out = `array* ${arrayVar} = ${right};\n`;
             out += `for (int ${indexVar} = 0; ${indexVar} < *${arrayVar}; ${indexVar}++) {\n`;
             this.pushScope();
             if (node.left.type !== 'VariableDeclaration') {
@@ -1069,13 +1143,14 @@ export class Compiler {
                 type.typeVars = this.parseTypeParameters(node.typeParameters);
             }
             let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {`;
-            let out = ['args_setup();'];
+            let out = ['start_args();'];
             for (let [name, type] of params) {
-                out.push(`${this.compileType(type)} jv${name} = extract_arg()`);
+                out.push(`get_arg(${this.compileType(type)}, jv${name});`);
             }
             if (restName !== null) {
-                out.push(`array** jv${restName} = extract_rest_arg()`);
+                out.push(`get_rest_arg(jv${restName});`);
             }
+            out.push('end_args();');
             for (let statement of node.body.body) {
                 out.push(...this.compileStatement(statement).split('\n'));
             }
@@ -1090,7 +1165,7 @@ export class Compiler {
             this.vars.setType(node.id.name, this.parseObjectType(node.body.body));
             return '';
         } else {
-            throw new Error(`Unrecognized AST node type in compileStatement: ${node.type}`);
+            this.astNodeTypeError(node, 'compileStatement');
         }
     }
 
