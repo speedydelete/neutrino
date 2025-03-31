@@ -29,17 +29,14 @@ declare var neutrino: {
 var Infinity = 1/0;
 var NaN = 0/0;
 // @ts-ignore
-var undefined = void 0;
+var undefined = neutrino.c`NULL`;
 
 
 type CallableFunction = Function;
 type NewableFunction = Function;
 
-interface IArguments {
-    [index: number]: any;
-    length: number;
-    callee: Function;
-}
+type IArguments = never;
+
 
 interface ObjectConstructor {
     (value: any): object;
