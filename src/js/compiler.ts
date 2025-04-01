@@ -586,7 +586,7 @@ export class Compiler {
                     }
                     let value = `get_key(${tempVar}, ${this.compileString(prop.key.name)})`;
                     let valueType = (type as t.object).props[prop.key.name];
-                    out += this.compileAssignment(prop.value as bt.LVal, value, valueType, declaration);
+                    out += this.compileAssignment(prop.value as bt.LVal, value, valueType, declaration, declare);
                 } else {
                     this.error('SyntaxError', 'Rest elements in object destructuring assignments are not supported');
                 }
@@ -711,9 +711,9 @@ export class Compiler {
             }
             this.currentNode = node;
             if (data.length === 0) {
-                return ['create_object()', new t.object()];
+                return ['create_object(0)', new t.object()];
             } else {
-                return [`create_object(${this.getTypeTags(types)}, ${data.join(', ')})`, new t.object(props)];
+                return [`create_object(${data.length}, ${data.join(', ')})`, new t.object(props)];
             }
         } else if (node.type === 'RecordExpression') {
             this.error('SyntaxError', 'Records are not supported');
@@ -734,7 +734,7 @@ export class Compiler {
             if (node.prefix) {
                 if (node.operator === 'typeof') {
                     if (type.tagIndex !== -1) {
-                        return [`typeof_from_tag(get_tag(${type.tagIndex}]))`, t.string];
+                        return [`typeof_from_tag(tags, get_tag(${type.tagIndex}))`, t.string];
                     } else if (type.type === 'undefined') {
                         return ['"undefined"', new t.string('undefined')];
                     } else if (type.type === 'object' || type.type === 'null') {
@@ -1235,8 +1235,9 @@ export class Compiler {
         let topLevelVars: string[] = [];
         for (let node of this.parse(code).body) {
             let code = this.compileStatement(node);
-            if (node.type === 'VariableDeclaration' && !code.includes('=')) {
-                topLevelVars.push(code);
+            if (node.type === 'VariableDeclaration') {
+                topLevelVars.push(code.split(' =')[0] + ';');
+                topLevel.push(code);
             } else if (node.type === 'FunctionDeclaration') {
                 funcs.push(code);
             } else {
@@ -1248,7 +1249,7 @@ export class Compiler {
             out += COMPILED_BUILTIN_CODE + '\n\n';
         }
         if (topLevelVars.length > 0) {
-            out += '\n\n' + topLevelVars.join('\n\n');
+            out += '\n\n' + topLevelVars.join('\n');
         }
         if (this.anonymousFunctions.length > 0) {
             out += '\n\n' + this.anonymousFunctions.join('\n\n');

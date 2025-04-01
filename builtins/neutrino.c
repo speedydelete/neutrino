@@ -402,6 +402,10 @@ char* typeof_from_tag(long tag, int index) {
     }
 }
 
+object* new_target = NULL;
+long new_target_tag = 0;
+#define new(out, func, ...) func(create_object(proto, 0), __VA_ARGS__)
+
 array* get_rest_arg_internal(va_list args, int count) {
     array* out = create_array(count);
     for (int i = 0; i < count; i++) {
