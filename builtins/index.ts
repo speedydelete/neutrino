@@ -169,21 +169,21 @@ interface String {
     length: number;
 }
 
-function String(value: any): string {
-    if (value === undefined) {
-        return 'undefined';
-    } else if (value === null) {
-        return 'null';
-    } else if (value === true) {
-        return 'true';
-    } else if (value === false) {
-        return 'false';
-    } else if (typeof value === 'number') {
-        return neutrino.c`itoa(${value})`;
-    } else {
-        return neutrino.c`${String}(object_to_primitive(value))`;
-    }
-}
+// function String(value: any): string {
+//     if (value === undefined) {
+//         return 'undefined';
+//     } else if (value === null) {
+//         return 'null';
+//     } else if (value === true) {
+//         return 'true';
+//     } else if (value === false) {
+//         return 'false';
+//     } else if (typeof value === 'number') {
+//         return neutrino.c`itoa(${value})`;
+//     } else {
+//         return neutrino.c`${String}(object_to_primitive(value))`;
+//     }
+// }
 
 
 // function Array<T>(...items: T[]): Array<T> {

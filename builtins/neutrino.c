@@ -1,4 +1,6 @@
 
+#ifndef NEUTRINO_VERSION
+
 #define NEUTRINO_VERSION "0.1.0"
 
 #include <stdbool.h>
@@ -16,6 +18,7 @@
         exit(4); \
     } \
 } while (0);
+
 
 typedef struct array {
     int length;
@@ -38,7 +41,7 @@ array* create_array_with_items(int length, ...) {
     out->length = length;
     safe_malloc(out->items, length * sizeof(void*));
     for (int i = 0; i < length; i++) {
-        out->items[i] = va_arg(args, size_t);
+        out->items[i] = va_arg(args, void*);
     }
     va_end(args);
     return out;
@@ -53,7 +56,6 @@ void array_push(array* arr, void* item) {
     arr->length++;
     free(arr->items);
     arr->items = new_items;
-    return arr;
 }
 
 array* array_slice(array* arr, int start, int end) {
@@ -64,6 +66,10 @@ array* array_slice(array* arr, int start, int end) {
     return out;
 }
 
+
+typedef uint64_t symbol;
+
+struct object;
 
 struct property {
     struct property* next;
@@ -80,7 +86,7 @@ struct property {
 
 struct symbol_property {
     struct symbol_property* next;
-    char* key;
+    symbol key;
     bool is_accessor;
     union {
         void* value;
@@ -97,13 +103,16 @@ typedef struct object {
     struct symbol_property* symbols;
 } object;
 
-char hash4(char* str) {
-    char hash = 0;
-    for (int i = 0; str[i] != NULL; i++) {
+
+int hash4(char* str) {
+    int hash = 0;
+    for (int i = 0; str[i] != 0; i++) {
         hash = (hash + str[i]) & 0xf;
     }
     return hash;
 }
+
+void set_key(object* obj, char* key, void* value);
 
 object* create_object(object* proto, int length, ...) {
     object* out;
@@ -114,8 +123,8 @@ object* create_object(object* proto, int length, ...) {
     }
     out->symbols = NULL;
     va_list args;
-    va_start(args, length * 2);
-    for (int i = 0; i < length; i++) {
+    va_start(args, length);
+    for (int i = 0; i < length/2; i++) {
         set_key(out, va_arg(args, char*), va_arg(args, void*));
     }
     va_end(args);
@@ -140,8 +149,8 @@ void* get_key(object* obj, char* key) {
     return NULL;
 }
 
-void* get_symbol(object* obj, long key) {
-    struct property* prop = obj->symbols;
+void* get_symbol(object* obj, symbol key) {
+    struct symbol_property* prop = obj->symbols;
     while (prop != NULL) {
         if (prop->key == key) {
             if (prop->is_accessor) {
@@ -174,7 +183,7 @@ void* get_symbol(object* obj, long key) {
     name->funcs.set = set;
 
 void set_key(object* obj, char* key, void* value) {
-    char hashed = hash4(key);
+    int hashed = hash4(key);
     struct property* prop = obj->data[hashed];
     if (prop == NULL) {
         create_prop(prop, key, value);
@@ -196,16 +205,15 @@ void set_key(object* obj, char* key, void* value) {
     prop->next = new_prop;
 }
 
-void set_symbol(object* obj, long key, void* value) {
-    char hashed = hash4(key);
+void set_symbol(object* obj, symbol key, void* value) {
     struct symbol_property* prop = obj->symbols;
     if (prop == NULL) {
         create_prop(prop, key, value);
-        obj->data[hashed] = prop;
+        obj->symbols = prop;
         return;
     }
     while (prop != NULL) {
-        if (strcmp(prop->key, key) == 0) {
+        if (prop->key == key) {
             if (prop->is_accessor) {
                 prop->funcs.set(obj, value);
             }
@@ -219,8 +227,8 @@ void set_symbol(object* obj, long key, void* value) {
     prop->next = new_prop;
 }
 
-void set_accessor(object* obj, char* key, void (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
-    char hashed = hash4(key);
+void set_accessor(object* obj, char* key, void* (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
+    int hashed = hash4(key);
     struct property* prop = obj->data[hashed];
     if (prop == NULL) {
         create_accessor(prop, key, get, set);
@@ -240,17 +248,16 @@ void set_accessor(object* obj, char* key, void (*get)(struct object* this), void
     prop->next = new_prop;
 }
 
-void set_symbol_accessor(object* obj, long key, void (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
-    char hashed = hash4(key);
+void set_symbol_accessor(object* obj, symbol key, void* (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
     struct symbol_property* prop = obj->symbols;
     if (prop == NULL) {
         struct symbol_property* new_prop;
         create_accessor(new_prop, key, get, set);
-        obj->data[hashed] = prop;
+        obj->symbols = prop;
         return;
     }
     while (prop != NULL) {
-        if (strcmp(prop->key, key) == 0) {
+        if (prop->key == key) {
             prop->funcs.get = get;
             prop->funcs.set = set;
             return;
@@ -263,7 +270,7 @@ void set_symbol_accessor(object* obj, long key, void (*get)(struct object* this)
 }
 
 bool delete_key(object* obj, char* key) {
-    char hashed = hash4(key);
+    int hashed = hash4(key);
     struct property* prop = obj->data[hashed];
     if (prop == NULL) {
         return false;
@@ -285,12 +292,12 @@ bool delete_key(object* obj, char* key) {
     return false;
 }
 
-bool delete_symbol(object* obj, char* key) {
+bool delete_symbol(object* obj, symbol key) {
     struct symbol_property* prop = obj->symbols;
     if (prop == NULL) {
         return false;
     }
-    if (prop->key = key) {
+    if (prop->key == key) {
         obj->symbols = prop->next;
     }
     struct symbol_property* prev = prop;
@@ -360,6 +367,7 @@ array* get_keys(object* obj) {
 
 
 #define count_tags(tags) (sizeof(tags) - __builtin_clzl(tags)) >> 2
+#define get_tag(index) (sizeof(tags) >> index*4) & 0xf
 #define start_args() int count = count_tags(tags); int processed = 0; va_list args; va_start(args, count);
 #define get_arg(type, name) processed++; type name = va_arg(args, type);
 #define end_args() va_end(args);
@@ -478,7 +486,7 @@ bigint* bigint_add_unsigned(bigint* a, bigint* b, bool sign) {
         if (i > b->size) {
             out->data[i] = a->data[i];
         } else {
-            uint64_t value = a->data[i] + b->data[i];
+            uint64_t value = a->data[i] + b->data[i] + carry;
             if (value > UINT32_MAX) {
                 carry = true;
             }
@@ -530,3 +538,6 @@ bigint* bigint_addsub(bigint* a, bigint* b, bool sub) {
 
 #define bigint_add(a, b) bigint_addsub(a, b, false)
 #define bigint_sub(a, b) bigint_addsub(a, b, true)
+
+
+#endif

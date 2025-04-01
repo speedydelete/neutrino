@@ -12,6 +12,8 @@ const BUILTIN_CODE = fs.readFileSync('./builtins/index.ts').toString();
 const BUILTIN_OPTIONS = {
     filename: 'builtins/index.ts',
     typescript: true,
+    includeBuiltins: false,
+    includeMain: false,
 };
 
 
@@ -158,6 +160,7 @@ export interface CompilerOptions {
     typescript?: boolean;
     jsx?: boolean;
     async?: boolean;
+    includeMain?: boolean;
     includeBuiltins?: boolean;
     colors?: HighlightColors;
 }
@@ -570,9 +573,9 @@ export class Compiler {
         if (node.type === 'Identifier') {
             this.vars.set(node.name, node.typeAnnotation ? this.parseType(node.typeAnnotation) : type);
             if (declaration) {
-                out = `${this.compileType(type)} ${node.name} = ${value};\n`;
+                out = `${this.compileType(type)} jv${node.name} = ${value};\n`;
             } else {
-                out = `${node.name} = ${value}`;
+                out = `jv${node.name} = ${value}`;
             }
         } else if (node.type === 'ObjectPattern') {
             out = '';
@@ -731,7 +734,7 @@ export class Compiler {
             if (node.prefix) {
                 if (node.operator === 'typeof') {
                     if (type.tagIndex !== -1) {
-                        return [`typeof_from_tag(tags[${type.tagIndex}]))`, t.string];
+                        return [`typeof_from_tag(get_tag(${type.tagIndex}]))`, t.string];
                     } else if (type.type === 'undefined') {
                         return ['"undefined"', new t.string('undefined')];
                     } else if (type.type === 'object' || type.type === 'null') {
@@ -971,21 +974,22 @@ export class Compiler {
             for (let i = 0; i < node.quasis.length; i++) {
                 out.push(node.quasis[i].value.raw);
                 if (i !== node.quasis.length - 1) {
-                    out.push(`String(${this.compileExpression(node.expressions[i] as bt.Expression)[0]})`);
+                    out.push(`jvString(${this.compileExpression(node.expressions[i] as bt.Expression)[0]})`);
                 }
             }
             return [`default_template_tag(${out.length}, ${out.join(', ')})`, t.string];
         } else if (node.type === 'TaggedTemplateExpression') {
             let out: string[] = [];
             let {quasi, tag} = node;
+            let isNeutrinoDotC = tag.type === 'MemberExpression' && tag.object.type === 'Identifier' && tag.object.name === 'neutrino' && tag.property.type === 'Identifier' && tag.property.name === 'c';
             for (let i = 0; i < quasi.quasis.length; i++) {
                 out.push(quasi.quasis[i].value.raw);
                 if (i !== quasi.quasis.length - 1) {
-                    out.push(this.compileExpression(quasi)[0]);
+                    let expr = this.compileExpression(quasi.expressions[i] as bt.Expression)[0];
+                    out.push(isNeutrinoDotC ? expr : `jvString(${expr})`);
                 }
             }
-            console.log(out);
-            if (tag.type === 'MemberExpression' && tag.object.type === 'Identifier' && tag.object.name === 'neutrino' && tag.property.type === 'Identifier' && tag.property.name === 'c') {
+            if (isNeutrinoDotC) {
                 return [out.join(''), t.any];
             } else {
                 let [tagCode, tagType] = this.compileExpression(tag);
@@ -1040,7 +1044,7 @@ export class Compiler {
                     [value, type] = this.compileExpression(decl.init);
                 }
             }
-            this.compileAssignment(decl.id, value, type, true, node.declare ?? false);
+            out += this.compileAssignment(decl.id, value, type, true, node.declare ?? false);
         }
         return out.trimEnd();
     }
@@ -1048,12 +1052,12 @@ export class Compiler {
     compileStatement(node: bt.Statement): string {
         this.currentNode = node;
         if (node.type === 'ExpressionStatement') {
-            return this.compileExpression(node.expression)[0];
+            return this.compileExpression(node.expression)[0] + ';';
         } else if (node.type === 'BlockStatement') {
             this.pushScope();
             let out: string[] = [];
             for (let statement of node.body) {
-                out.push(...this.compileStatement(statement)[0].split('\n'));
+                out.push(...this.compileStatement(statement).split('\n'));
             }
             this.popScope();
             return '{\n' + out.map(x => '    ' + x).join('\n') + '\n}';
@@ -1080,7 +1084,7 @@ export class Compiler {
                 return 'goto ' + node.label.name + ';';
             }
         } else if (node.type === 'IfStatement') {
-            let out = 'if (' + this.compileExpression(node.test) + ') ' + this.compileStatement(node.consequent);
+            let out = 'if (' + this.compileExpression(node.test)[0] + ') ' + this.compileStatement(node.consequent);
             if (node.alternate) {
                 if (node.consequent.type === 'BlockStatement') {
                     out += ' else ';
@@ -1225,13 +1229,13 @@ export class Compiler {
     }
 
     compile(code: string): string {
-        this.code = code;
+        this.code = BUILTIN_CODE + code;
         let funcs: string[] = [];
         let topLevel: string[] = [];
         let topLevelVars: string[] = [];
         for (let node of this.parse(code).body) {
             let code = this.compileStatement(node);
-            if (node.type === 'VariableDeclaration') {
+            if (node.type === 'VariableDeclaration' && !code.includes('=')) {
                 topLevelVars.push(code);
             } else if (node.type === 'FunctionDeclaration') {
                 funcs.push(code);
@@ -1239,7 +1243,10 @@ export class Compiler {
                 topLevel.push(code);
             }
         }
-        let out = '\n#include "neutrino.h"\n\n';
+        let out = '\n#include "neutrino.c"\n\n'
+        if (this.options.includeBuiltins ?? true) {
+            out += COMPILED_BUILTIN_CODE + '\n\n';
+        }
         if (topLevelVars.length > 0) {
             out += '\n\n' + topLevelVars.join('\n\n');
         }
@@ -1250,7 +1257,7 @@ export class Compiler {
         if (funcs.length > 0) {
             out += '\n\n' + funcs.join('\n\n');
         }
-        if (topLevel.length > 0) {
+        if (topLevel.length > 0 && (this.options.includeMain ?? true)) {
             out += '\n\nint main(int argc, char** argv) {\n';
             for (let lines of topLevel) {
                 for (let line of lines.split('\n')) {
@@ -1263,3 +1270,6 @@ export class Compiler {
     }
 
 }
+
+
+const COMPILED_BUILTIN_CODE = (new Compiler(BUILTIN_OPTIONS)).compile(BUILTIN_CODE);

@@ -25,8 +25,8 @@ struct property {
     union {
         void* value;
         struct {
-            void* (*get)(struct object*);
-            void (*set)(struct object*, void*);
+            void* (*get)(struct object* this);
+            void (*set)(struct object* this, void* value);
         } funcs;
     };
 };
@@ -38,8 +38,8 @@ struct symbol_property {
     union {
         void* value;
         struct {
-            void* (*get)(struct object*);
-            void (*set)(struct object*, void*);
+            void* (*get)(struct object* this);
+            void (*set)(struct object* this, void* value);
         } funcs;
     };
 };
@@ -58,8 +58,8 @@ void* get_symbol(object* obj, long key);
 
 void set_key(object* obj, char* key, void* value);
 void set_symbol(object* obj, long key, void* value);
-void set_accessor(object* obj, char* key, void (*get)(struct object*), void (*set)(struct object*, void*));
-void set_symbol_accessor(object* obj, long key, void (*get)(struct object*), void (*set)(struct object*, void*));
+void set_accessor(object* obj, char* key, void (*get)(struct object* this), void (*set)(struct object* this, void* value));
+void set_symbol_accessor(object* obj, long key, void (*get)(struct object* this), void (*set)(struct object* this, void* value));
 
 bool delete_key(object* obj, char* key);
 bool delete_symbol(object* obj, char* key);
