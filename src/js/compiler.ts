@@ -178,6 +178,8 @@ export class Compiler {
     thisType: Type = t.undefined;
     anonymousFunctions: string[] = [];
 
+    builtinTopLevel: string[] = [];
+
     constructor(options: CompilerOptions = {}) {
         this.options = options;
         this.vars = new VariableMap(this);
@@ -186,9 +188,9 @@ export class Compiler {
         this.compileStatement = this.compileStatement.bind(this);
         if (options.includeBuiltins ?? true) {
             this.code = BUILTIN_CODE;
-            for (let node of this.parse(BUILTIN_CODE, BUILTIN_OPTIONS).body) {
-                this.compileStatement(node);
-            }
+            let ast = this.parse(BUILTIN_CODE, BUILTIN_OPTIONS).body;
+            let [decls] = this.hoistDeclarations(ast);
+            this.builtinTopLevel.push(decls);
             this.code = null;
         }
     }
@@ -1302,7 +1304,6 @@ export class Compiler {
             this.pushScope();
             let type = this.getFunctionType(node, false);
             type.construct = new t.functionsig(type.call.params, t.any);
-            this.vars.set(node.id.name, type);
             for (let [name, paramType] of type.call.params) {
                 this.vars.set(name, paramType);
             }
@@ -1319,6 +1320,7 @@ export class Compiler {
                 out.push(...this.compileStatement(statement).split('\n'));
             }
             this.popScope();
+            this.vars.set(node.id.name, type);
             return start + out.map(line => '    ' + line).join('\n') + '\n}\n' + `jo${node.id.name} = create_object(jvFunction, 1, "prototype", create_object(jvObject, 1, "constructor", jv${node.id.name}))`;
         } else if (node.type === 'TypeAlias') {
             this.error('SyntaxError', 'Flow is not supported');
@@ -1350,9 +1352,10 @@ export class Compiler {
                 for (let decl of node.declarations) {
                     out.push(this.compileAssignment(decl.id, '', t.undefined, true, true).split(' =')[0] + ';');
                 }
+                stmts.push(node);
             } else if (node.type === 'FunctionDeclaration') {
-                let type = this.getFunctionType(node);
-                out.push(this.compileType(this.getFunctionType(node)))
+                out.push(this.compileType(this.getFunctionType(node)));
+                stmts.push(node);
             } else if (node.type === 'TSTypeAliasDeclaration') {
                 this.pushScope();
                 if (node.typeParameters) {
@@ -1361,7 +1364,6 @@ export class Compiler {
                 let parsed = this.parseType(node.typeAnnotation);
                 this.popScope();
                 this.vars.setType(node.id.name, parsed);
-                continue;
             } else if (node.type === 'TSInterfaceDeclaration') {
                 this.pushScope();
                 if (node.typeParameters) {
@@ -1370,8 +1372,9 @@ export class Compiler {
                 let parsed = this.parseObjectType(node.body.body);
                 this.popScope();
                 this.vars.setType(node.id.name, parsed);
+            } else {
+                stmts.push(node);
             }
-            stmts.push(node);
         }
         return [out.join('\n'), stmts];
     }
@@ -1394,7 +1397,10 @@ export class Compiler {
         }
         let out = '\n#include "neutrino.c"\n\n'
         if (this.options.includeBuiltins ?? true) {
-            out += COMPILED_BUILTIN_CODE + '\n\n';
+            if (this.builtinTopLevel.length > 0) {
+                out += '\n\n' + this.builtinTopLevel.join('\n');
+            }
+            out += '\n\n' + COMPILED_BUILTIN_CODE;
         }
         if (topLevelVars.length > 0) {
             out += '\n\n' + topLevelVars.join('\n');

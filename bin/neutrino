@@ -12,5 +12,8 @@ try {
     } else {
         console.error(error);
     }
+    if (typeof error === "object" && error && "stack" in error) {
+        console.error(error.stack);
+    }
     process.exit(1);
 }' && gcc -Wall -Werror -Wpedantic -Ibuiltins .temp.c && ./a.out

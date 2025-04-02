@@ -58,17 +58,15 @@ interface ObjectConstructor {
     values(obj: object): any[];
 }
 
-declare var Object: ObjectConstructor;
-
 // @ts-ignore
-Object = function(value: any): object {
+var Object: ObjectConstructor = function(value: any): object {
     if (new.target === undefined) {
         return new Object(value);
     } else {
         if (new.target !== Object) {
-            return neutrino.c`create_object(get_key(${new.target}, "prototype"))`;
+            return neutrino.c`create_object(get_key(${new.target}, "prototype"), 0)`;
         } else if (value === null || value === undefined) {
-            return neutrino.c`create_object(get_key(${Object}, "prototype"))`;
+            return neutrino.c`create_object(get_key(${Object}, "prototype"), 0)`;
         } else if (typeof value === 'object' || typeof value === 'function') {
             return value;
         } else {
