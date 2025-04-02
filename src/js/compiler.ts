@@ -163,6 +163,8 @@ export interface CompilerOptions {
     includeMain?: boolean;
     includeBuiltins?: boolean;
     colors?: HighlightColors;
+    jsxPragma?: string;
+    jsxPragmaFrag?: string;
 }
 
 export class Compiler {
@@ -400,7 +402,7 @@ export class Compiler {
         }
     }
 
-    parseParameters(parameters: (bt.Identifier | bt.RestElement | bt.Pattern)[]): [[string, Type][], null | [string, Type]] {
+    parseParameters(parameters: (bt.Identifier | bt.RestElement | bt.Pattern | bt.TSParameterProperty)[]): [[string, Type][], null | [string, Type]] {
         let params: [string, Type][] = [];
         let restParam: null | [string, Type] = null;
         for (let i = 0; i < parameters.length; i++) {
@@ -613,6 +615,91 @@ export class Compiler {
         return out;
     }
 
+    getFunctionType(node: bt.Function, pushScope: boolean = true): t.object & {call: t.functionsig} {
+        let func = new t.functionsig();
+        if (pushScope) {
+            this.pushScope();
+        }
+        if (node.typeParameters) {
+            func.typeVars = this.parseTypeParameters(node.typeParameters);
+        }
+        let [params, restParam] = this.parseParameters(node.params);
+        func.params = params;
+        func.restParam = restParam;
+        if (!node.returnType) {
+            this.error('SyntaxError', 'Methods must have return types');
+        }
+        func.returnType = this.parseType(node.returnType);
+        if (pushScope) {
+            this.popScope();
+        }
+        return Object.assign(new t.object((this.vars.getType('Function') as t.object).props), {call: func});
+    }
+
+    parsedJSXPragma: bt.Expression | null = null;
+    parsedJSXPragmaFrag: bt.Expression | null = null;
+
+    transformJSX(node: bt.JSXElement | bt.JSXFragment | bt.JSXIdentifier | bt.JSXMemberExpression | bt.JSXNamespacedName | bt.JSXExpressionContainer | bt.JSXText | bt.JSXSpreadChild | bt.Expression): bt.Expression {
+        this.currentNode = node;
+        if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+            if (this.parsedJSXPragma === null) {
+                this.parsedJSXPragma = (this.parse(this.options.jsxPragma ?? 'React.createElement').body[0] as bt.ExpressionStatement).expression;
+                this.currentNode = node;
+            }
+            let args: bt.Expression[] = [];
+            if (node.type === 'JSXElement') {
+                let open = node.openingElement;
+                args.push(this.transformJSX(open.name));
+                if (open.attributes.length === 0) {
+                    args.push({type: 'NullLiteral', loc: open.loc});
+                } else {
+                    let props: (bt.ObjectProperty | bt.SpreadElement)[] = [];
+                    for (let attr of open.attributes) {
+                        if (attr.type === 'JSXAttribute') {
+                            props.push({type: 'ObjectProperty', loc: attr.loc, computed: false, shorthand: false, key: this.transformJSX(attr.name), value: this.transformJSX(attr.value ?? attr.name)});
+                        } else {
+                            props.push({type: 'SpreadElement', loc: attr.loc, argument: attr.argument});
+                        }
+                    }
+                    args.push({type: 'ObjectExpression', loc: open.loc, properties: props})
+                }
+            } else {
+                if (this.parsedJSXPragmaFrag === null) {
+                    this.parsedJSXPragmaFrag = (this.parse((this.options.jsxPragma ?? 'React.createElement') + ';').body[0] as bt.ExpressionStatement).expression;
+                    this.currentNode = node;
+                }
+                args.push(this.parsedJSXPragmaFrag, {type: 'NullLiteral', loc: node.loc});
+            }
+            for (let child of node.children) {
+                this.currentNode = child;
+                args.push(this.transformJSX(child));
+            }
+            return {
+                type: 'CallExpression',
+                loc: node.loc,
+                callee: this.parsedJSXPragma,
+                arguments: args,
+            };
+        } else if (node.type === 'JSXIdentifier') {
+            if (node.name[0] === node.name[0].toUpperCase()) {
+                return {type: 'Identifier', loc: node.loc, name: node.name};
+            } else {
+                return {type: 'StringLiteral', loc: node.loc, value: node.name};
+            }
+        } else if (node.type === 'JSXExpressionContainer') {
+            if (node.expression.type === 'JSXEmptyExpression') {
+                this.astNodeTypeError(node.expression, 'transformJSX');
+            }
+            return node.expression;
+        } else if (node.type === 'JSXText') {
+            return {type: 'StringLiteral', loc: node.loc, value: node.value};
+        } else if (node.type === 'JSXMemberExpression' || node.type === 'JSXNamespacedName' || node.type === 'JSXSpreadChild') {
+            this.astNodeTypeError(node, 'transformJSX');
+        } else {
+            return node;
+        }
+    }
+
     compileExpression(node: bt.Expression | bt.PrivateName | bt.V8IntrinsicIdentifier): [string, Type] {
         this.currentNode = node;
         if (node.type === 'Identifier') {
@@ -643,8 +730,6 @@ export class Compiler {
             this.error('SyntaxError', 'super; is not supported');
         } else if (node.type === 'ThisExpression') {
             return ['this', this.thisType];
-        } else if (node.type === 'ArrowFunctionExpression') {
-            this.error('SyntaxError', 'Arrow functions are not supported');
         } else if (node.type === 'YieldExpression') {
             this.error('SyntaxError', 'Generators are not supported');
         } else if (node.type === 'AwaitExpression') {
@@ -678,8 +763,9 @@ export class Compiler {
             }
         } else if (node.type === 'ObjectExpression') {
             let data: string[] = [];
-            let props: {[key: PropertyKey]: Type} = {};
+            let props: {[key: PropertyKey]: Type} = (this.vars.getType('Object') as t.object).props;
             let types: Type[] = [];
+            let methods: bt.FunctionDeclaration[] = [];
             for (let prop of node.properties) {
                 this.currentNode = prop;
                 types.push(t.string);
@@ -704,30 +790,39 @@ export class Compiler {
                         }
                     }
                 } else if (prop.type === 'ObjectMethod') {
-                    this.error('SyntaxError', 'Methods are not supported');
+                    if (prop.key.type !== 'Identifier') {
+                        this.error('SyntaxError', 'Methods cannot have computed keys');
+                    }
+                    props[prop.key.name] = this.getFunctionType(prop);
+                    methods.push(Object.assign({}, prop, {
+                        type: 'FunctionDeclaration',
+                        id: {type: 'Identifier', loc: prop.key.loc, name: `__anonymous_${this.anonymousFunctions.length}`},
+                    } as const));
                 } else {
-                    this.error('SyntaxError', 'Spread elements are not supported');
+                    this.error('SyntaxError', 'Spread elements are not supported in object literals');
                 }
             }
+            this.thisType = new t.object(props);
+            for (let method of methods) {
+                this.anonymousFunctions.push(this.compileStatement(method));
+            }
             this.currentNode = node;
+            this.thisType = t.undefined;
             if (data.length === 0) {
-                return ['create_object(0)', new t.object()];
+                return ['create_object(jvObject, 0)', new t.object()];
             } else {
-                return [`create_object(${data.length}, ${data.join(', ')})`, new t.object(props)];
+                return [`create_object(jvObject, ${data.length}, ${data.join(', ')})`, new t.object(props)];
             }
         } else if (node.type === 'RecordExpression') {
             this.error('SyntaxError', 'Records are not supported');
         } else if (node.type === 'TupleExpression') {
             this.error('SyntaxError', 'Tuples are not supported');
-        } else if (node.type === 'FunctionExpression') {
-            let name = `__anonymous_${this.anonymousFunctions.length}`;
-            if (!node.id) {
-                node.id = {
-                    type: 'Identifier',
-                    name: `__anonymous_${this.anonymousFunctions.length}`,
-                };
-            }
-            this.anonymousFunctions.push(this.compileStatement(Object.assign(node, {type: 'FunctionDeclaration'} as const)));
+        } else if (node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
+            let name = 'id' in node && node.id ? node.id.name : `__anonymous_${this.anonymousFunctions.length}`;
+            this.anonymousFunctions.push(this.compileStatement(Object.assign(node, {
+                type: 'FunctionDeclaration',
+                id: {type: 'Identifier', loc: node.loc, name},
+            } as const)));
             return ['jv' + name, this.vars.get(name)];
         } else if (node.type === 'UnaryExpression') {
             let [expr, type] = this.compileExpression(node.argument);
@@ -867,9 +962,16 @@ export class Compiler {
                         out = `${object}`;
                     }
                 }
+                if (objectType instanceof t.object && objectType.call !== null && right.startsWith('jv')) {
+                    right = 'jo' + right.slice(2);
+                }
                 let prop: string;
                 if (left.property.type === 'Identifier') {
                     prop = this.compileString(left.property.name);
+                    if (left.property.name === 'prototype' && objectType instanceof t.object && objectType.construct) {
+                        objectType.props['prototype'] = rightType;
+                        objectType.construct.returnType = objectType.props['prototype'];
+                    }
                     let propType = (objectType as t.object).props[left.property.name];
                     if (!propType.extends(rightType)) {
                         this.error('TypeError', `Cannot assign value of type ${this.formatType(rightType)} to property of type ${this.formatType(propType)}`)
@@ -952,13 +1054,21 @@ export class Compiler {
             return ['(' + expr[0] + ')', expr[1]];
         } else if (node.type === 'NewExpression') {
             let args = node.arguments.map(arg => this.compileExpression(arg as bt.Expression));
-            let [callee, calleeType] = this.compileExpression(node.callee);
+            if (node.callee.type !== 'Identifier') {
+                this.error('SyntaxError', 'Constructors for new() must be identifiers');
+            }
+            let callee = node.callee.name;
+            let calleeType = this.vars.get(callee);
             if (calleeType instanceof t.object && calleeType.construct !== null) {
-                let out = `new(${callee}, ${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
+                let out = `new(jo${callee}, jv${callee}, ${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
+                let outType = calleeType.construct.returnType;
+                if (outType instanceof t.object) {
+                    Object.assign(outType.props, {constructor: calleeType});
+                }
                 if (node.optional) {
-                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.construct.returnType, t.undefined)];
+                    return [`(${callee} == NULL ? NULL : ${out})`, new t.union(outType, t.undefined)];
                 } else {
-                    return [out, calleeType.construct.returnType];
+                    return [out, outType];
                 }
             } else {
                 this.error('TypeError', `Object of type ${this.formatType(calleeType)} is not a constructor`);
@@ -1026,6 +1136,21 @@ export class Compiler {
             }
         } else if (node.type === 'TSInstantiationExpression') {
             this.error('SyntaxError', 'Instantiation expressions are not supported');
+        } else if (node.type === 'PipelineBareFunction' || node.type === 'PipelinePrimaryTopicReference' || node.type === 'PipelineTopicExpression') {
+            this.error('SyntaxError', 'The pipeline operator is not supported');
+        } else if (node.type === 'TypeCastExpression') {
+            this.error('SyntaxError', 'Flow is not supported');
+        } else if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+            return this.compileExpression(this.transformJSX(node));
+        } else if (node.type === 'ImportExpression') {
+            this.error('SyntaxError', 'Modules are not supported');
+        } else if (node.type === 'ClassExpression') {
+            let name = 'id' in node && node.id ? node.id.name : `__anonymous_${this.anonymousFunctions.length}`;
+            this.anonymousFunctions.push(this.compileStatement(Object.assign({}, node, {
+                type: 'ClassDeclaration',
+                id: {type: 'Identifier', loc: node.loc, name},
+            } as const)));
+            return ['jv' + name, this.vars.get(name)];
         } else {
             this.astNodeTypeError(node, 'compileExpression');
         }
@@ -1174,58 +1299,81 @@ export class Compiler {
             if (node.generator) {
                 this.error('SyntaxError', 'Generators are not supported');
             }
-            let [params, restName] = this.parseParameters(node.params);
-            if (!node.returnType) {
-                this.error('SyntaxError', 'Functions must have a return type');
-            }
-            let type = this.vars.getType('Function').copy() as t.object;
-            type.call = new t.functionsig(params, this.parseType(node.returnType));
-            type.construct = new t.functionsig(params, t.any);
-            this.vars.set(node.id.name, type);
             this.pushScope();
-            for (let [name, type] of params) {
-                this.vars.set(name, type);
-            }
-            if (node.typeParameters) {
-                type.typeVars = this.parseTypeParameters(node.typeParameters);
+            let type = this.getFunctionType(node, false);
+            type.construct = new t.functionsig(type.call.params, t.any);
+            this.vars.set(node.id.name, type);
+            for (let [name, paramType] of type.call.params) {
+                this.vars.set(name, paramType);
             }
             let start = `${this.compileType(type.call.returnType)} jv${node.id.name}(long tags, ...) {\n`;
             let out = ['start_args();'];
-            for (let [name, type] of params) {
-                out.push(`get_arg(${this.compileType(type)}, jv${name});`);
+            for (let [name, paramType] of type.call.params) {
+                out.push(`get_arg(${this.compileType(paramType)}, jv${name});`);
             }
-            if (restName !== null) {
-                out.push(`get_rest_arg(jv${restName});`);
+            if (type.call.restParam !== null) {
+                out.push(`get_rest_arg(jv${type.call.restParam[0]});`);
             }
             out.push('end_args();');
             for (let statement of node.body.body) {
                 out.push(...this.compileStatement(statement).split('\n'));
             }
             this.popScope();
-            return start + out.map(line => '    ' + line).join('\n') + '\n}';
+            return start + out.map(line => '    ' + line).join('\n') + '\n}\n' + `jo${node.id.name} = create_object(jvFunction, 1, "prototype", create_object(jvObject, 1, "constructor", jv${node.id.name}))`;
         } else if (node.type === 'TypeAlias') {
             this.error('SyntaxError', 'Flow is not supported');
-        } else if (node.type === 'TSTypeAliasDeclaration') {
+        } else if (node.type === 'ClassDeclaration') {
             this.pushScope();
-            if (node.typeParameters) {
-                this.parseTypeParameters(node.typeParameters, true);
+            if (node.typeParameters !== null) {
+
             }
-            let parsed = this.parseType(node.typeAnnotation);
-            this.popScope();
-            this.vars.setType(node.id.name, parsed);
-            return '';
-        } else if (node.type === 'TSInterfaceDeclaration') {
-            this.pushScope();
-            if (node.typeParameters) {
-                this.parseTypeParameters(node.typeParameters, true);
+            let constructor: bt.FunctionDeclaration | null;
+            let body: (bt.ObjectMethod | bt.ObjectProperty)[];
+            for (let prop of node.body.body) {
+                
             }
-            let parsed = this.parseObjectType(node.body.body);
+            if (node.superClass !== null) {
+
+            }
             this.popScope();
-            this.vars.setType(node.id.name, parsed);
-            return '';
+            this.error('SyntaxError', 'Classes are not supported');
         } else {
             this.astNodeTypeError(node, 'compileStatement');
         }
+    }
+
+    hoistDeclarations(nodes: bt.Statement[]): [string, bt.Statement[]] {
+        let out: string[] = [];
+        let stmts: bt.Statement[] = [];
+        for (let node of nodes) {
+            if (node.type === 'VariableDeclaration') {
+                for (let decl of node.declarations) {
+                    out.push(this.compileAssignment(decl.id, '', t.undefined, true, true).split(' =')[0] + ';');
+                }
+            } else if (node.type === 'FunctionDeclaration') {
+                let type = this.getFunctionType(node);
+                out.push(this.compileType(this.getFunctionType(node)))
+            } else if (node.type === 'TSTypeAliasDeclaration') {
+                this.pushScope();
+                if (node.typeParameters) {
+                    this.parseTypeParameters(node.typeParameters, true);
+                }
+                let parsed = this.parseType(node.typeAnnotation);
+                this.popScope();
+                this.vars.setType(node.id.name, parsed);
+                continue;
+            } else if (node.type === 'TSInterfaceDeclaration') {
+                this.pushScope();
+                if (node.typeParameters) {
+                    this.parseTypeParameters(node.typeParameters, true);
+                }
+                let parsed = this.parseObjectType(node.body.body);
+                this.popScope();
+                this.vars.setType(node.id.name, parsed);
+            }
+            stmts.push(node);
+        }
+        return [out.join('\n'), stmts];
     }
 
     compile(code: string): string {
@@ -1233,12 +1381,12 @@ export class Compiler {
         let funcs: string[] = [];
         let topLevel: string[] = [];
         let topLevelVars: string[] = [];
-        for (let node of this.parse(code).body) {
+        let ast = this.parse(code).body;
+        let [decls, nodes] = this.hoistDeclarations(ast);
+        topLevel.push(decls);
+        for (let node of nodes) {
             let code = this.compileStatement(node);
-            if (node.type === 'VariableDeclaration') {
-                topLevelVars.push(code.split(' =')[0] + ';');
-                topLevel.push(code);
-            } else if (node.type === 'FunctionDeclaration') {
+            if (node.type === 'FunctionDeclaration') {
                 funcs.push(code);
             } else {
                 topLevel.push(code);

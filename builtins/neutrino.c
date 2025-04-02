@@ -11,13 +11,14 @@
 #include <stdio.h>
 
 
-#define safe_malloc(ptr, size) do { \
-    ptr = malloc(size); \
-    if (!ptr) { \
-        fprintf(stderr, "InternalError: malloc failed\n"); \
-        exit(4); \
-    } \
-} while (0);
+#define safe_malloc(ptr, size) \
+    do { \
+        ptr = malloc(size); \
+        if (!ptr) { \
+            fprintf(stderr, "InternalError: malloc failed\n"); \
+            exit(4); \
+        } \
+    } while (0);
 
 
 typedef struct array {
@@ -420,14 +421,22 @@ array* get_rest_arg_internal(va_list args, int count) {
 typedef struct bigint {
     int size;
     bool sign;
+    bool is_inf;
+    bool is_nan;
     uint32_t data[];
 } bigint;
 
-bigint* create_bigint(bool sign, int size, uint32_t data[]) {
+bigint* create_bigint(bool sign, bool is_inf, bool is_nan, int size) {
     bigint* out;
     safe_malloc(out, sizeof(bigint) + 32 * size);
     out->size = size;
     out->sign = sign;
+    out->is_inf = false;
+    out->is_nan = false;
+}
+
+bigint* create_bigint_with_values(bool sign, bool is_inf, bool is_nan, int size, uint32_t data[]) {
+    bigint* out = create_bigint(sign, is_inf, is_nan, size);
     for (int i = 0; i < size; i++) {
         out->data[i] = data[i];
     }
@@ -438,12 +447,16 @@ bool bigint_eq(bigint* a, bigint* b) {
     if (a->size != b->size) {
         return false;
     }
+    bool is_zero = true;
     for (int i = 0; i < a->size; i++) {
         if (a->data[i] != b->data[i]) {
             return false;
         }
+        if (a->data[i] != 0) {
+            is_zero = false;
+        }
     }
-    return true;
+    return a->sign == b->sign || is_zero;
 }
 
 #define bigint_ne(a, b) !bigint_eq(a, b);
@@ -476,14 +489,17 @@ bigint* bigint_copy(bigint* x) {
     return out;
 }
 
-bigint* bigint_add_unsigned(bigint* a, bigint* b, bool sign) {
-    if (a->size > b->size) {
-        bigint* temp = a;
-        a = b;
-        b = temp;
+#define bigint_last(x) x->data[x->size - 1]
+#define swap_if_larger(a, b) \
+    if (b->size > a->size) { \
+        bigint* temp = a; \
+        a = b; \
+        b = temp; \
     }
-    bigint* out;
-    safe_malloc(out, sizeof(bigint) + 32 * (a->size + ((a->data[a->size - 1] + b->data[a->size - 1]) > UINT32_MAX)));
+
+bigint* bigint_add_unsigned(bigint* a, bigint* b, bool sign) {
+    swap_if_larger(a, b);
+    bigint* out = create_bigint(false, false, false, a->size + ((bigint_last(a) + bigint_last(b)) > UINT32_MAX));
     out->sign = sign;
     bool carry = 0;
     for (int i = 0; i < a->size; i++) {
@@ -501,13 +517,9 @@ bigint* bigint_add_unsigned(bigint* a, bigint* b, bool sign) {
 }
 
 bigint* bigint_sub_unsigned(bigint* a, bigint* b) {
-    if (a->size > b->size) {
-        bigint* temp = a;
-        a = b;
-        b = temp;
-    }
+    swap_if_larger(a, b);
     bigint* out;
-    safe_malloc(out, sizeof(bigint) + 32 * (a->size - ((a->data[a->size - 1] - b->data[a->size - 1]) == 0)));
+    safe_malloc(out, sizeof(bigint) + 32 * (a->size - ((bigint_last(a) - bigint_last(b)) == 0)));
     bool carry = 0;
     for (int i = 0; i < a->size; i++) {
         if (i > b->size) {
@@ -542,6 +554,42 @@ bigint* bigint_addsub(bigint* a, bigint* b, bool sub) {
 
 #define bigint_add(a, b) bigint_addsub(a, b, false)
 #define bigint_sub(a, b) bigint_addsub(a, b, true)
+
+#define bigint_set_uint64(value, k, result) \
+    value->data[k] = result & 0xffffffff; \
+    value->data[k + 1] = result >> 32;
+
+bigint* bigint_mul(bigint* a, bigint* b) {
+    swap_if_larger(a, b);
+    bigint* out;
+    safe_malloc(out, sizeof(bigint) + 32 * (a->size + b->size));
+    bool carry = 0;
+    for (int i = 0; i < a->size; i++) {
+        for (int j = 0; j < b->size; j++) {
+            int k = i * j;
+            uint64_t value = a->data[i] * b->data[j] + out->data[k] + carry;
+            if (out->data[k + 1] == 0) {
+                bigint_set_uint64(out, k, value);
+                carry = 0;
+            } else {
+                uint64_t new_value = value + (out->data[k + 1] << 32);
+                carry = value < new_value;
+                bigint_set_uint64(out, k, new_value);
+            }
+        }
+    }
+    out->sign = a->sign ^ b->sign;
+    return out;
+}
+
+// struct bigint_divmod_result {
+//     bigint* quotient;
+//     bigint* remainder;
+// }
+
+// bigint_divmod_result* bigint_divmod(bigint* a, bigint* b) {
+//     return (bigint_divmod_result){quotient, remainder};
+// }
 
 
 #endif

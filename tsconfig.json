@@ -6,7 +6,7 @@
         "esModuleInterop": true,
         "module": "NodeNext",
         "outDir": "./lib",
-        "rootDir": "./src",
+        "rootDir": "src",
         "sourceMap": true
     },
     "files": ["src/index.ts"]
