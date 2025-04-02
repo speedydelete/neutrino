@@ -5,7 +5,7 @@ fi
 node --enable-source-maps -e '
 try {
     const fs = require("fs");
-    fs.writeFileSync(".temp.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), {filename: "'$1'"}));
+    fs.writeFileSync(".temp.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), {filename: "'$1'", typescript: true, jsx: true}));
 } catch (error) {
     if ("toStringColors" in error) {
         console.error(error.toStringColors());

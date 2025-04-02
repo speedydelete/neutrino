@@ -177,8 +177,7 @@ export class Compiler {
     strictMode: boolean = false;
     thisType: Type = t.undefined;
     anonymousFunctions: string[] = [];
-
-    builtinTopLevel: string[] = [];
+    topLevelCode: string[] = [];
 
     constructor(options: CompilerOptions = {}) {
         this.options = options;
@@ -188,9 +187,6 @@ export class Compiler {
         this.compileStatement = this.compileStatement.bind(this);
         if (options.includeBuiltins ?? true) {
             this.code = BUILTIN_CODE;
-            let ast = this.parse(BUILTIN_CODE, BUILTIN_OPTIONS).body;
-            let [decls] = this.hoistDeclarations(ast);
-            this.builtinTopLevel.push(decls);
             this.code = null;
         }
     }
@@ -234,7 +230,8 @@ export class Compiler {
             }).program;
         } catch (error) {
             let [type, msg_loc] = String(error).split(': ');
-            let [msg, loc] = msg_loc.slice(0, -1).split('. (');
+            console.log(msg_loc);
+            let [msg, loc] = msg_loc.slice(0, -1).split(/\.? \(/);
             let [line, col] = loc.split(':').map(x => parseInt(x));
             throw new CompilerError(this, type, msg, {
                 filename: options.filename ?? '<anonymous>',
@@ -332,7 +329,12 @@ export class Compiler {
         for (let tag of tags) {
             out += tag + ') << 4 + ';
         }
-        return '(' + out.slice(0, -8) + ')';
+        out = '(' + out.slice(0, -8) + ')';
+        if (out === '()') {
+            return '0';
+        } else {
+            return out;
+        }
     }
 
     getSingleTag(type: Type): string {
@@ -549,7 +551,7 @@ export class Compiler {
         }
     }
 
-    compileType(type: Type): string {
+    compileType(type: Type, functionName?: string): string {
         if (type.type === 'undefined' || type.type === 'null') {
             return 'void*';
         } else if (type.type === 'boolean') {
@@ -565,7 +567,11 @@ export class Compiler {
         } else if (type.extends(this.vars.getType('Array'))) {
             return 'array*';
         } else if (type.type === 'object') {
-            return 'object*';
+            if (type instanceof t.object && type.call) {
+                return `${this.compileType(type.call.returnType)} jv${functionName}(long tags, ...);\nobject* jo${functionName};\n`
+            } else {
+                return 'object*';
+            }
         } else {
             this.error('NeutrinoBugError', `Unrecognized type type in compileType: ${type.type}`);
         }
@@ -629,12 +635,13 @@ export class Compiler {
         func.params = params;
         func.restParam = restParam;
         if (!node.returnType) {
-            this.error('SyntaxError', 'Methods must have return types');
+            this.error('SyntaxError', 'Functions must have return types');
         }
         func.returnType = this.parseType(node.returnType);
         if (pushScope) {
             this.popScope();
         }
+        
         return Object.assign(new t.object((this.vars.getType('Function') as t.object).props), {call: func});
     }
 
@@ -1039,7 +1046,7 @@ export class Compiler {
             }
             let [callee, calleeType] = this.compileExpression(node.callee);
             if (calleeType instanceof t.object && calleeType.call !== null) {
-                let out = `${callee}(${this.getTypeTags(args.map(arg => arg[1]))}, ${args.map(arg => arg[0]).join(', ')})`;
+                let out = `${callee}(${this.getTypeTags(args.map(arg => arg[1]))}${args.length > 0 ? ', ' + args.map(arg => arg[0]).join(', ') : ''})`;
                 if (node.optional) {
                     return [`(${callee} == NULL ? NULL : ${out})`, new t.union(calleeType.call.returnType, t.undefined)];
                 } else {
@@ -1321,7 +1328,8 @@ export class Compiler {
             }
             this.popScope();
             this.vars.set(node.id.name, type);
-            return start + out.map(line => '    ' + line).join('\n') + '\n}\n' + `jo${node.id.name} = create_object(jvFunction, 1, "prototype", create_object(jvObject, 1, "constructor", jv${node.id.name}))`;
+            this.topLevelCode.push(`jo${node.id.name} = create_object(jvFunction, 1, "prototype", create_object(jvObject, 1, "constructor", jv${node.id.name}));`);
+            return start + out.map(line => '    ' + line).join('\n') + '\n}\n';
         } else if (node.type === 'TypeAlias') {
             this.error('SyntaxError', 'Flow is not supported');
         } else if (node.type === 'ClassDeclaration') {
@@ -1354,7 +1362,10 @@ export class Compiler {
                 }
                 stmts.push(node);
             } else if (node.type === 'FunctionDeclaration') {
-                out.push(this.compileType(this.getFunctionType(node)));
+                if (!node.id) {
+                    throw new Error('Invalid AST');
+                }
+                out.push(this.compileType(this.getFunctionType(node), node.id.name));
                 stmts.push(node);
             } else if (node.type === 'TSTypeAliasDeclaration') {
                 this.pushScope();
@@ -1383,27 +1394,37 @@ export class Compiler {
         this.code = BUILTIN_CODE + code;
         let funcs: string[] = [];
         let topLevel: string[] = [];
-        let topLevelVars: string[] = [];
+        let topLevelDecls: string[] = [];
+        this.topLevelCode = [];
+        if (this.options.includeBuiltins ?? true) {
+            let ast = this.parse(BUILTIN_CODE, BUILTIN_OPTIONS).body;
+            let [decls, nodes] = this.hoistDeclarations(ast);
+            topLevelDecls.push(decls);
+            console.log(decls);
+            for (let node of nodes) {
+                let code = this.compileStatement(node);
+                if (node.type === 'FunctionDeclaration') {
+                    funcs.push(code);
+                } else {
+                    topLevel.push(code);
+                }
+            }
+        }
         let ast = this.parse(code).body;
         let [decls, nodes] = this.hoistDeclarations(ast);
-        topLevel.push(decls);
+        topLevelDecls.push(decls);
+        let builtinTopLevel: string[] = [];
         for (let node of nodes) {
             let code = this.compileStatement(node);
             if (node.type === 'FunctionDeclaration') {
                 funcs.push(code);
             } else {
-                topLevel.push(code);
+                builtinTopLevel.push(code);
             }
         }
         let out = '\n#include "neutrino.c"\n\n'
-        if (this.options.includeBuiltins ?? true) {
-            if (this.builtinTopLevel.length > 0) {
-                out += '\n\n' + this.builtinTopLevel.join('\n');
-            }
-            out += '\n\n' + COMPILED_BUILTIN_CODE;
-        }
-        if (topLevelVars.length > 0) {
-            out += '\n\n' + topLevelVars.join('\n');
+        if (topLevelDecls.length > 0) {
+            out += '\n\n' + topLevelDecls.join('\n');
         }
         if (this.anonymousFunctions.length > 0) {
             out += '\n\n' + this.anonymousFunctions.join('\n\n');
@@ -1412,9 +1433,9 @@ export class Compiler {
         if (funcs.length > 0) {
             out += '\n\n' + funcs.join('\n\n');
         }
-        if (topLevel.length > 0 && (this.options.includeMain ?? true)) {
+        if (this.options.includeMain ?? true) {
             out += '\n\nint main(int argc, char** argv) {\n';
-            for (let lines of topLevel) {
+            for (let lines of builtinTopLevel.concat(this.topLevelCode, topLevel)) {
                 for (let line of lines.split('\n')) {
                     out += '    ' + line + '\n';
                 }
@@ -1425,6 +1446,3 @@ export class Compiler {
     }
 
 }
-
-
-const COMPILED_BUILTIN_CODE = (new Compiler(BUILTIN_OPTIONS)).compile(BUILTIN_CODE);
