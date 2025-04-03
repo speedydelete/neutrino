@@ -1,13 +1,11 @@
 
-import type * as bt from '@babel/types';
 import {SourceData} from './errors';
-import t, {Type} from './types';
+import {Scope, Type} from './types';
 
 
 export interface BaseNode {
     type: string;
     src: SourceData;
-    t: Type;
 }
 
 export interface SpreadElement extends BaseNode {
@@ -16,52 +14,60 @@ export interface SpreadElement extends BaseNode {
 }
 
 export interface Function extends BaseNode {
-    generator: boolean;
-    async: boolean;
     id: Identifier | null;
     params: (LValue | SpreadElement)[];
+    body: Statement[];
+    scope: Scope;
+}
+
+export interface Program extends BaseNode {
+    scope: Scope;
     body: Statement[];
 }
 
 
-export interface Identifier extends BaseNode {
+export interface BaseExpression {
+    resultType: Type;
+}
+
+export interface Identifier extends BaseExpression {
     type: 'Identifier';
     name: string;
 }
 
-export interface NullLiteral extends BaseNode {
+export interface NullLiteral extends BaseExpression {
     type: 'NullLiteral';
 }
 
-export interface BooleanLiteral extends BaseNode {
+export interface BooleanLiteral extends BaseExpression {
     type: 'BooleanLiteral'
     value: boolean;
 }
 
-export interface StringLiteral extends BaseNode {
+export interface StringLiteral extends BaseExpression {
     type: 'StringLiteral'
     value: string;
 }
 
-export interface NumberLiteral extends BaseNode {
+export interface NumberLiteral extends BaseExpression {
     type: 'NumberLiteral'
     value: number;
 }
 
-export interface BigIntLiteral extends BaseNode {
+export interface BigIntLiteral extends BaseExpression {
     type: 'BigIntLiteral';
     value: bigint;
 }
 
-export interface RegExpLiteral extends BaseNode {
+export interface RegExpLiteral extends BaseExpression {
     type: 'RegExpLiteral';
     pattern: string;
     flags: string;
 }
 
-export interface ArrayLiteral extends BaseNode {
+export interface ArrayLiteral extends BaseExpression {
     type: 'ArrayLiteral';
-    elts: [Expression | null | SpreadElement][];
+    elts: (Expression | null | SpreadElement)[];
 }
 
 export interface ObjectMember<Computed extends boolean = boolean> extends BaseNode {
@@ -79,12 +85,12 @@ export interface ObjectMethod<Computed extends boolean = boolean> extends Object
     kind: 'get' | 'set' | 'method';
 }
 
-export interface ObjectLiteral extends BaseNode {
+export interface ObjectLiteral extends BaseExpression {
     type: 'ObjectLiteral';
-    props: [ObjectProperty | ObjectMethod | SpreadElement][];
+    props: (ObjectProperty | ObjectMethod | SpreadElement)[];
 }
 
-export interface TemplateLiteral extends BaseNode {
+export interface TemplateLiteral extends BaseExpression {
     type: 'TemplateLiteral';
     parts: string[];
     exprs: Expression[];
@@ -94,59 +100,64 @@ export interface TemplateLiteral extends BaseNode {
 export type Literal = NullLiteral | BooleanLiteral | StringLiteral | NumberLiteral | BigIntLiteral | RegExpLiteral | ArrayLiteral | ObjectLiteral | TemplateLiteral;
 
 export type UnaryOperator = '-' | '+' | '!' | '~' | 'typeof' | 'void' | 'delete' | '++' | '--';
-export interface UnaryExpression extends BaseNode {
+export interface UnaryExpression extends BaseExpression {
     type: 'UnaryExpression';
     operator: UnaryOperator;
     prefix: boolean;
 }
 
 export type BinaryOperator = '==' | '!=' | '===' | '!==' | '<' | '<=' | '>' | '>=' | '+' | '-' | '*' | '/' | '%' | '**' | '&' | '|' | '^' | '<<' | '>>' | '>>>' | '&&' | '||' | 'in' | 'instanceof' | ',';
-export interface BinaryExpression extends BaseNode {
+export interface BinaryExpression extends BaseExpression {
     type: 'BinaryExpression';
     left: Expression;
     right: Expression;
     op: BinaryOperator;
 }
 
-export interface AssignmentExpression extends BaseNode {
+export interface AssignmentExpression extends BaseExpression {
     type: 'AssignmentExpression';
     left: LValue;
     right: Expression;
 }
 
-export interface ConditionalExpression extends BaseNode {
+export interface ConditionalExpression extends BaseExpression {
     type: 'ConditionalExpression';
     test: Expression;
     true: Expression;
     false: Expression;
 }
 
-export interface PropertyExpression<Computed extends boolean = boolean> extends BaseNode {
+export interface PropertyExpression<Computed extends boolean = boolean> extends BaseExpression {
+    type: 'PropertyExpression';
     object: Expression;
     computed: Computed;
     property: Computed extends true ? Expression : Identifier;
     optional: boolean;
 }
 
-export interface CallExpression extends BaseNode {
+export interface CallExpression extends BaseExpression {
     type: 'CallExpression';
     func: Expression;
     args: (Expression | SpreadElement)[];
     optional: boolean;
 }
 
-export interface NewExpression extends BaseNode {
+export interface NewExpression extends BaseExpression {
     type: 'NewExpression';
     class: Expression;
     args: (Expression | SpreadElement)[];
 }
 
-export interface ThisExpression extends BaseNode {
+export interface ThisExpression extends BaseExpression {
     type: 'ThisExpression';
 }
 
-export interface FunctionExpression extends Function {
+export interface FunctionExpression extends BaseExpression, Function {
     type: 'FunctionExpression';
+}
+
+export interface ArrowFunctionExpression extends BaseExpression, Function {
+    type: 'ArrowFunctionExpression';
 }
 
 export type Expression = Identifier | Literal | UnaryExpression | BinaryExpression | AssignmentExpression | ConditionalExpression | PropertyExpression | CallExpression | NewExpression | ThisExpression | FunctionExpression;
@@ -192,6 +203,7 @@ export interface EmptyStatement extends BaseNode {
 export interface BlockStatement extends BaseNode {
     type: 'BlockStatement';
     body: Statement[];
+    scope: Scope;
 }
 
 export interface LabeledStatement extends BaseNode {
@@ -271,12 +283,12 @@ export interface ForOfStatement extends BaseNode {
 
 export interface BreakStatement extends BaseNode {
     type: 'BreakStatement';
-    label: string | null;
+    label: Identifier | null;
 }
 
 export interface ContinueStatement extends BaseNode {
     type: 'BreakStatement';
-    label: string | null;
+    label: Identifier | null;
 }
 
 export interface FunctionDeclaration extends Function {
@@ -302,4 +314,4 @@ export interface WithStatement extends BaseNode {
 export type Statement = EmptyStatement | BlockStatement | LabeledStatement | ExpressionStatement | VariableDeclaration | IfStatement | SwitchStatement | WhileStatement | DoWhileStatement | ForStatement | ForInStatement | ForOfStatement | FunctionDeclaration | ReturnStatement | DebuggerStatement | WithStatement;
 
 
-export type Node = Expression | LValue | Statement | ObjectProperty | ObjectMethod | ObjectPatternProperty | VariableDeclarator | SwitchCase;
+export type Node = Program | Expression | LValue | Statement | ObjectProperty | ObjectMethod | ObjectPatternProperty | VariableDeclarator | SwitchCase;

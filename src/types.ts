@@ -5,48 +5,48 @@ import {CompilerError, SourceData} from './errors';
 export class Scope {
 
     parent: Scope | null;
-    vars: Map<string, Type>;
-    types: Map<string, Type>;
+    vars: Map<string, Type> = new Map();
+    types: Map<string, Type> = new Map();
 
     constructor(parent?: Scope | null) {
         this.parent = parent ?? null;
     }
 
-    get(name: string, src: SourceData) {
+    get(name: string, src: SourceData): Type {
         let type = this.vars.get(name);
         if (type !== undefined) {
             return type;
-        } else if (this.parent !== undefined) {
+        } else if (this.parent) {
             return this.parent.get(name, src);
         } else {
             throw new CompilerError('ReferenceError', `${name} is not defined`, src);
         }
     }
 
-    has(name: string) {
+    has(name: string): boolean {
         return this.vars.has(name) || (this.parent ? this.parent.has(name) : false);
     }
 
-    set(name: string, type: Type) {
+    set(name: string, type: Type): void {
         this.vars.set(name, type);
     }
 
-    getType(name: string, src: SourceData) {
+    getType(name: string, src: SourceData): Type {
         let type = this.types.get(name);
         if (type !== undefined) {
             return type;
-        } else if (this.parent !== undefined) {
+        } else if (this.parent) {
             return this.parent.getType(name, src);
         } else {
             throw new CompilerError('ReferenceError', `${name} is not defined`, src);
         }
     }
 
-    hasType(name: string) {
+    hasType(name: string): boolean {
         return this.types.has(name) || (this.parent ? this.parent.hasType(name) : false);
     }
 
-    setType(name: string, type: Type) {
+    setType(name: string, type: Type): void {
         this.types.set(name, type);
     }
 
@@ -66,7 +66,7 @@ export abstract class Type {
         return other === this || other instanceof this.constructor;
     }
 
-    _copy<T extends Type>(out?: T): T {
+    _copy<T extends Type>(out: T): T {
         out.typeVars = this.typeVars;
         out.resolvedTypeVars = this.resolvedTypeVars;
         return out;
@@ -105,7 +105,7 @@ export class TypeVar extends Type {
         super();
         this.name = name;
         this.constraint = constraint ?? new Any();
-        this.defaultValue = defaultValue ?? constraint;
+        this.defaultValue = defaultValue ?? this.constraint;
     }
 
     extends(other: Type): boolean {
@@ -131,21 +131,23 @@ export class TypeVar extends Type {
 }
 
 export type TypeRef<T extends Type = Type> = T & {
+    scope: Scope;
     name: string;
     resolve(): T;
 };
 
-export let TypeRef = Object.assign(function(scope: Scope, name: string) {
+export let TypeRef = Object.assign(function(this: TypeRef, scope: Scope, name: string) {
     if (!new.target) {
         return new TypeRef(scope, name);
     }
+    this.scope = scope;
     this.name = name;
 }, {
     prototype: new Proxy(Object.assign(Object.create(Type.prototype), {
-        resolve() {
-            return this.scope.getType(this.name);
+        resolve(this: TypeRef, src: SourceData) {
+            return this.scope.getType(this.name, src);
         },
-        toString() {
+        toString(this: TypeRef) {
             return this.name;
         }
     }), {
@@ -274,6 +276,7 @@ export function createValueType<T extends any, Name extends string>(name: Name, 
     return new Proxy(cls, {
         get(target, prop, receiver) {
             if (prop in withValue) {
+                // @ts-ignore
                 return withValue[prop];
             } else {
                 return Reflect.get(target, prop, receiver);
@@ -288,7 +291,7 @@ export function createValueType<T extends any, Name extends string>(name: Name, 
 
 export const boolean = createValueType<boolean, 'boolean'>('boolean');
 export const number = createValueType<number, 'number'>('number');
-const ESCAPES = {
+const ESCAPES: {[key: string]: string} = {
     '\0': '\\0',
     '"': '\\"',
     '\\': '\\\\',
@@ -298,7 +301,7 @@ const ESCAPES = {
     '\t': '\\t',
     '\b': '\\b',
     '\f': '\\f',
-} as const;
+};
 export const string = createValueType<string, 'string'>('string', class extends ValueType<string> {
     toString(): string {
         let out = '';
@@ -491,6 +494,7 @@ const _object = new class extends Type {
 export const object = new Proxy(_ObjectType, {
     get(target, prop, receiver) {
         if (prop in _object) {
+            // @ts-ignore
             return _object[prop];
         } else {
             return Reflect.get(target, prop, receiver);
@@ -501,25 +505,14 @@ export const object = new Proxy(_ObjectType, {
     },
 }) as typeof _ObjectType & typeof _object;
 
-
-export const types = {
-    Type,
-    TypeVar,
-    typevar(name: string, constraint?: Type, defaultValue?: Type) {
-        return new TypeVar(name, constraint, defaultValue);
-    },
-    any: new Any(),
-    unknown: new Unknown(),
-    never: new Never(),
-    undefined: new Undefined(),
-    void: new Void(),
-    null: new Null(),
-    boolean,
-    number,
-    string,
-    symbol,
-    bigint,
-    object,
+export const any = new Any();
+export const unknown = new Unknown();
+export const never = new Never();
+const undefined_ = new Undefined();
+const void_ = new Void();
+const null_ = new Null();
+export {
+    undefined_ as undefined,
+    void_ as void,
+    null_ as null,
 }
-
-export default types;

@@ -5,9 +5,9 @@
         "strict": true,
         "esModuleInterop": true,
         "module": "NodeNext",
-        "outDir": "./lib",
-        "rootDir": "src_old",
+        "outDir": "lib",
+        "rootDir": "src",
         "sourceMap": true
     },
-    "files": ["src_old/index.ts"]
+    "files": ["src/index.ts"]
 }
