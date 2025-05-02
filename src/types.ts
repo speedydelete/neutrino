@@ -70,10 +70,10 @@ interface ObjectType extends BaseType<'object'> {
     indexes: [string, Type, Type][];
 };
 
-export type ObjectTypeKeyword = BaseType<'object'> & ((props: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes?: [string, Type, Type][]) => ObjectType) & {props: {}, call: null, indexes: []};
+export type ObjectTypeKeyword = BaseType<'object'> & ((props: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes?: [string, Type, Type][]) => ObjectType) & {props: {[key: PropertyKey]: Type}, call: null, indexes: []};
 
 // @ts-ignore
-export var object: ObjectTypeKeyword = addToString(Object.assign(function(props: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes: [string, Type, Type][] = []): ObjectType {
+export const object: ObjectTypeKeyword = addToString(Object.assign(function(props: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes: [string, Type, Type][] = []): ObjectType {
     return {type: 'object', props, call: call ?? null, indexes};
 }, {type: 'object' as const, props: {} as const, call: null, indexes: [] as const}));
 
@@ -85,10 +85,9 @@ interface ArrayType extends ObjectType {
 export type TupleArray = ArrayType & {elts: Type[]};
 export type NonTupleArray = ArrayType & {elts: Type};
 export function array(elts: Type | Type[]): ArrayType {
-    let data = {length: string};
+    let data: {[key: PropertyKey]: Type} = {length: string};
     let obj: ObjectType;
     if (Array.isArray(elts)) {
-        let data: {[key: string]: Type} = {};
         for (let i = 0; i < elts.length; i++) {
             data[i] = elts[i];
         }
@@ -139,12 +138,18 @@ export function intersection(...types: Type[]): Intersection {
     return {type: 'intersection', types};
 }
 
+export type Import = BaseType<'import'> & {module: Type};
+function createImport(module: Type): Import {
+    return {type: 'import', module};
+}
+export {createImport as import};
+
 
 export type NonLiteralPrimitive = Undefined | Null | BooleanType | NumberType | StringType | SymbolType | BigIntType;
 export type PrimitiveLiteral = BooleanLiteral | NumberLiteral | StringLiteral | UniqueSymbol | BigIntLiteral;
 export type Primitive = NonLiteralPrimitive | PrimitiveLiteral;
 
-export type JSType = Any | Unknown | Never | Primitive | Void | ObjectType | ObjectTypeKeyword | ArrayType | Union | Intersection;
+export type JSType = Any | Unknown | Never | Primitive | Void | ObjectType | ObjectTypeKeyword | ArrayType | Union | Intersection | Import;
 
 
 export type Char = ValueTypeFactory<'char', bigint>;
@@ -393,8 +398,7 @@ export function toString(type: Type, colors: boolean | HighlightColors = false):
             }
             params += ')';
         }
-        let keys = Object.keys(type.props);
-        if (keys.length === 0) {
+        if (Object.keys(type.props).length === 0) {
             if (type.call) {
                 return params + ' => ' + toString(type.call.returnType);
             } else {
@@ -402,7 +406,7 @@ export function toString(type: Type, colors: boolean | HighlightColors = false):
             }
         }
         let out = '{\n';
-        for (let key of keys) {
+        for (let key in type.props) {
             if (typeof key === 'symbol') {
                 continue;
             }
@@ -444,7 +448,7 @@ export function resolveObjectIntersection(...objects: ObjectType[]): ObjectType 
     let out = object({});
     for (let obj of objects) {
         for (let key of Reflect.ownKeys(obj.props)) {
-            out[key] = obj.props[key];
+            out.props[key] = obj.props[key];
         }
         if (obj.call) {
             out.call = obj.call;

@@ -3,12 +3,14 @@
 
 #define NEUTRINO_VERSION "0.1.0"
 
-#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
-#include <stdio.h>
+#include <ctype.h>
+#include <math.h>
+#include <stdarg.h>
 
 
 #define safe_malloc(ptr, size) \
@@ -21,54 +23,21 @@
     } while (0);
 
 
-typedef struct array {
-    int length;
-    void** items;
-} array;
+void** js_null = (void**)0;
 
-array* create_array(int length) {
-    struct array* out;
-    safe_malloc(out, sizeof(array));
-    out->length = length;
-    safe_malloc(out->items, length * sizeof(void*));
-    return out;
-}
-
-array* create_array_with_items(int length, ...) {
-    va_list args;
-    va_start(args, length);
-    struct array* out;
-    safe_malloc(out, sizeof(array));
-    out->length = length;
-    safe_malloc(out->items, length * sizeof(void*));
-    for (int i = 0; i < length; i++) {
-        out->items[i] = va_arg(args, void*);
-    }
-    va_end(args);
-    return out;
-}
-
-void array_push(array* arr, void* item) {
-    void** new_items;
-    safe_malloc(new_items, sizeof(void*) * (arr->length + 1));
-    for (int i = 0; i < arr->length; i++) {
-        new_items[i] = arr->items[i];
-    }
-    arr->length++;
-    free(arr->items);
-    arr->items = new_items;
-}
-
-array* array_slice(array* arr, int start, int end) {
-    array* out = create_array(start - end);
-    for (int i = start; i < end; i++) {
-        out->items[i] = arr->items[i];
-    }
-    return out;
-}
+double NaN = (double)NAN;
 
 
 typedef uint64_t symbol;
+symbol next_symbol = 0;
+#define create_symbol() next_symbol++;
+
+symbol Symbol_toPrimitive;
+
+void create_well_known_symbols() {
+    Symbol_toPrimitive = create_symbol();
+}
+
 
 struct object;
 
@@ -132,7 +101,7 @@ object* create_object(object* proto, int length, ...) {
     return out;
 }
 
-void* get_key(object* obj, char* key) {
+void* get_string(object* obj, char* key) {
     struct property* prop = obj->data[hash4(key)];
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
@@ -145,7 +114,7 @@ void* get_key(object* obj, char* key) {
         prop = prop->next;
     }
     if (obj->prototype != NULL) {
-        return get_key(obj->prototype, key);
+        return get_string(obj->prototype, key);
     }
     return NULL;
 }
@@ -168,6 +137,8 @@ void* get_symbol(object* obj, symbol key) {
     return NULL;
 }
 
+#define get_obj(obj, key) _Generic(key, char*: get_string(obj, key), symbol: get_symbol(obj, key))
+
 #define create_prop(name, key, value) \
     safe_malloc(name, sizeof(struct property) - sizeof(void*)); \
     name->next = NULL; \
@@ -183,7 +154,7 @@ void* get_symbol(object* obj, symbol key) {
     name->funcs.get = get; \
     name->funcs.set = set;
 
-void set_key(object* obj, char* key, void* value) {
+void set_string(object* obj, char* key, void* value) {
     int hashed = hash4(key);
     struct property* prop = obj->data[hashed];
     if (prop == NULL) {
@@ -228,7 +199,9 @@ void set_symbol(object* obj, symbol key, void* value) {
     prop->next = new_prop;
 }
 
-void set_accessor(object* obj, char* key, void* (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
+#define set_obj(obj, key, value) _Generic(key, char*: set_string(obj, key, value), symbol: set_symbol(obj, key, value))
+
+void set_string_accessor(object* obj, char* key, void* (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
     int hashed = hash4(key);
     struct property* prop = obj->data[hashed];
     if (prop == NULL) {
@@ -270,7 +243,9 @@ void set_symbol_accessor(object* obj, symbol key, void* (*get)(struct object* th
     prop->next = new_prop;
 }
 
-bool delete_key(object* obj, char* key) {
+#define set_accessor(obj, key, get, set) _Generic(key, char*: set_string_accessor(obj, key, get, set), symbol: set_symbol_accessor(obj, key, get, set))
+
+bool delete_string(object* obj, char* key) {
     int hashed = hash4(key);
     struct property* prop = obj->data[hashed];
     if (prop == NULL) {
@@ -314,7 +289,9 @@ bool delete_symbol(object* obj, symbol key) {
     return false;
 }
 
-bool has_key(object* obj, char* key) {
+#define delete(obj, key) _Generic(key, char*: delete_key(obj, key), symbol: delete_symbol(obj, key))
+
+bool has_string(object* obj, char* key) {
     struct property* prop = obj->data[hash4(key)];
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
@@ -335,6 +312,8 @@ bool has_symbol(object* obj, int key) {
     }
     return false;
 }
+
+#define has_obj(obj, key) _Generic(key, char*: has_string(obj, key), symbol: has_symbol(obj, key))
 
 int num_keys(object* obj) {
     int count = 0;
@@ -364,48 +343,40 @@ array* get_keys(object* obj) {
     return out;
 }
 
-#define call(obj, method, ...) get_key(obj, method)(obj, __VA_ARGS__)
+#define call_obj(obj, method, ...) ((void*(*)())get_obj(obj, method))(obj, ## __VA_ARGS__)
+
+void (*new_target)() = NULL;
+long new_target_tag = 0;
+#define new(proto, func, ...) ((new_target = func) func(create_object(proto, 0), ## __VA_ARGS__))
 
 
-#define count_tags(tags) (sizeof(tags) - __builtin_clzl(tags)) >> 2
-#define get_tag(index) (sizeof(tags) >> index*4) & 0xf
-#define start_args() int count = count_tags(tags); int processed = 0; va_list args; va_start(args, count);
-#define get_arg(type, name) processed++; type name = va_arg(args, type);
-#define end_args() va_end(args);
+typedef struct array {
+    int length;
+    void** items;
+} array;
 
-char* typeof_from_tag(long tag, int index) {
-    tag = (tag >> (index << 2)) & 3;
-    switch (tag) {
-        case 0:
-            return "undefined";
-        case 1:
-        case 7:
-            return "object";
-        case 2:
-            return "boolean";
-        case 3:
-            return "number";
-        case 4:
-            return "string";
-        case 5:
-            return "symbol";
-        case 6:
-            return "bigint";
-        case 8:
-            return "function";
-        case 9:
-            return "tuple";
-        case 10:
-            return "record";
-        default:
-            printf("NeutrinoBugError: invalid type tag");
-            exit(3);
-    }
+array* create_array(int length) {
+    struct array* out;
+    safe_malloc(out, sizeof(array));
+    out->length = length;
+    safe_malloc(out->items, length * sizeof(void*));
+    return out;
 }
 
-object* new_target = NULL;
-long new_target_tag = 0;
-#define new(proto, func, ...) func(create_object(proto, 0), __VA_ARGS__)
+array* create_array_with_items(int length, ...) {
+    va_list args;
+    va_start(args, length);
+    struct array* out;
+    safe_malloc(out, sizeof(array));
+    out->length = length;
+    safe_malloc(out->items, length * sizeof(void*));
+    for (int i = 0; i < length; i++) {
+        out->items[i] = va_arg(args, void*);
+    }
+    va_end(args);
+    return out;
+}
+
 
 array* get_rest_arg_internal(va_list args, int count) {
     array* out = create_array(count);
@@ -418,178 +389,312 @@ array* get_rest_arg_internal(va_list args, int count) {
 #define get_rest_arg(name) array* name = get_rest_arg_internal(args, count - processed);
 
 
-typedef struct bigint {
-    int size;
-    bool sign;
-    bool is_inf;
-    bool is_nan;
-    uint32_t data[];
-} bigint;
+enum Type {
+    UNDEFINED_TAG,
+    NULL_TAG,
+    BOOLEAN_TAG,
+    NUMBER_TAG,
+    STRING_TAG,
+    SYMBOL_TAG,
+    OBJECT_TAG,
+    ARRAY_TAG,
+};
 
-bigint* create_bigint(bool sign, bool is_inf, bool is_nan, int size) {
-    bigint* out;
-    safe_malloc(out, sizeof(bigint) + 32 * size);
-    out->size = size;
-    out->sign = sign;
-    out->is_inf = false;
-    out->is_nan = false;
+typedef struct any {
+    enum Type type;
+    union {
+        bool boolean;
+        double number;
+        char* string;
+        symbol* symbol;
+        object* object;
+        array* array;
+    };
+} any;
+
+void create_empty_any(any* out, enum Type type) {
+    any* out;
+    safe_malloc(out, sizeof(any));
+    out->type = type;
+    return out;
 }
 
-bigint* create_bigint_with_values(bool sign, bool is_inf, bool is_nan, int size, uint32_t data[]) {
-    bigint* out = create_bigint(sign, is_inf, is_nan, size);
-    for (int i = 0; i < size; i++) {
-        out->data[i] = data[i];
+#define to_any(out, x) \
+    safe_malloc(out, sizeof(any)); \
+    out->type = _Generic(x, void*: UNDEFINED_TAG, void**: NULL_TAG, bool: BOOLEAN_TAG, double: NUMBER_TAG, char*: STRING_TAG, symbol: SYMBOL_TAG, object*: OBJECT_TAG, array*: OBJECT_TAG, any*: x->type); \
+    _Generic(x, void*: 0, void**: 0, bool: out->boolean = x, double: out->number = x, char*: out->string = x, symbol: out->symbol = x, object*: out->object = x, array*: out->object = x, any*: x->type);
+
+char* js_typeof_any(any* value) {
+    switch (value->type) {
+        case UNDEFINED_TAG:
+            return "undefined";
+        case NULL_TAG:
+        case OBJECT_TAG:
+        case ARRAY_TAG:
+            return "object";
+        case BOOLEAN_TAG:
+            return "boolean";
+        default:
+            return "symbol";
+    }
+}
+
+#define js_typeof(x) _Generic(x, void*: "undefined", void**: "null", bool: "boolean", double: "number", char*: "string", symbol: "symbol", object*: "object", array*: "object", any*: js_typeof_any(value))
+
+any* object_to_primitive(object* value) {
+    any* out = NULL;
+    if (has_obj(value, Symbol_toPrimitive)) {
+        out = (any*)(call_obj(value, Symbol_toPrimitive, "default"));
+    } else if (has_obj(value, "valueOf")) {
+        out = (any*)(call_obj(value, "valueOf"));
+    } else if (has_obj(value, "toString")) {
+        out = (any*)call_obj(value, "toString");
+    }
+    if (out == NULL || out->type == OBJECT_TAG || out->type == ARRAY_TAG) {
+        safe_malloc(out, sizeof(any));
+        out->type = NUMBER_TAG;
+        out->number = NaN;
     }
     return out;
 }
 
-bool bigint_eq(bigint* a, bigint* b) {
-    if (a->size != b->size) {
-        return false;
-    }
-    bool is_zero = true;
-    for (int i = 0; i < a->size; i++) {
-        if (a->data[i] != b->data[i]) {
-            return false;
-        }
-        if (a->data[i] != 0) {
-            is_zero = false;
-        }
-    }
-    return a->sign == b->sign || is_zero;
+char* array_to_string(array* value) {
+    return "[object Array]";
 }
 
-#define bigint_ne(a, b) !bigint_eq(a, b);
-
-bool bigint_cmp(bigint* a, bigint* b, bool eq) {
-    if (a->size > b->size) {
-        return false;
+double parse_number(char* value) {
+    int length = strlen(value);
+    int i = 0;
+    double out = 0;
+    for (; i < length; i++) {
+        char x = value[i];
+        if (x != '\n' || x != ' ') {
+            break;
+        }
     }
-    for (int i = 0; i < a->size; i++) {
-        if (a->data[i] < b->data[i]) {
+    if (i == length) {
+        return 0;
+    }
+    char x = value[i];
+    if (x == '+') {
+        i++;
+    } else if (x == '-') {
+        i++;
+        out = -out;
+    }
+    if (strcmp(value + i, "Infinity")) {
+        if (signbit(out)) {
+            return -INFINITY;
+        } else {
+            return INFINITY;
+        }
+    }
+    for (; i < length; i++) {
+        char x = value[i];
+        if (x == '.') {
+            for (int j = 1; j < length - i; j++) {
+                char x = value[i + j];
+                if (isdigit(x)) {
+                    out += x / pow(10, j);
+                } else {
+                    return NaN;
+                }
+            }
+            return out;
+        } else if (isdigit(x)) {
+            out = out * 10 + x;
+        } else {
+            return NaN;
+        }
+    }
+    return out;    
+}
+
+double cast_any_to_number(any* value) {
+    switch (value->type) {
+        case UNDEFINED_TAG:
+            return NaN;
+        case NULL_TAG:
+            return 0;
+        case BOOLEAN_TAG:
+            return value->boolean;
+        case STRING_TAG:
+            return parse_number(value->string);
+        case SYMBOL_TAG:
+            return NaN;
+        case OBJECT_TAG:
+            return cast_any_to_number(object_to_primitive(value->object));
+        default:
+            return parse_number(array_to_primitive(value->array));
+    }
+}
+
+#define cast_to_number(x) _Generic(x, void*: NaN, void**: 0, bool: (double)(x), double: x, char*: parse_number(x), symbol: NaN, object*: cast_any_to_number(object_to_primitive(x->object)), array*: parse_number(array_to_string(x->object)))
+
+const char* BASE_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+char* number_to_string(double value, int base) {
+    if (isnan(value)) {
+        return "NaN";
+    } else if (isinf(value)) {
+        return value > 0 ? "Infinity" : "-Infinity";
+    }
+    bool sign = value < 0;
+    value = abs(value);
+    if (value > 1e21 || value < 1e-6) {
+        double mag = ceil(log(value)/log(10));
+        char* result = number_to_string(value / mag, base);
+        if (sign) {
+            result = strcat("-", result);
+        }
+        result = strcat(result, sign ? "-" : "+");
+        result = strcat(result, number_to_string(mag, base));
+        return result;
+    }
+    long long whole = fmod(value, 1);
+    double frac = value - whole;
+    char out[30];
+    int i;
+    for (i = 0; i < 30 && whole > 0; i++) {
+        out[i] = BASE_CHARS[whole % base];
+        whole /= base;
+    }
+    if (frac != 0) {
+        out[i++] = i;
+        frac *= base;
+        for (; i < 30 && frac > 0; i++) {
+            out[i] = BASE_CHARS[(int)fmod(frac, 1)];
+            frac *= base;
+        }
+    }
+    out[i] = NULL;
+    return out;
+}
+
+char* cast_any_to_string(any* value) {
+    switch (value->type) {
+        case UNDEFINED_TAG:
+            return "undefined";
+        case NULL_TAG:
+            return "null";
+        case BOOLEAN_TAG:
+            return value->boolean ? "true" : "false";
+        case NUMBER_TAG:
+            return number_to_string(value->number, 10);
+        case SYMBOL_TAG:
+            return "Symbol";
+        case OBJECT_TAG:
+            return cast_to_string(object_to_primitive(value->object));
+        default:
+            return array_to_string(value->array);
+    }
+}
+
+#define cast_to_string(x) _Generic(x, void*: "undefined", void**: "null", bool: (x ? "true" : "false"), double: number_to_string(x), char*: x, symbol: "Symbol", object*: cast_to_string(object_to_primitive(value->object)), array*: array_to_string(value->array));
+
+bool cast_any_to_boolean(any* value) {
+    switch (value->type) {
+        case UNDEFINED_TAG:
+        case NULL_TAG:
+            return false;
+        case BOOLEAN_TAG:
+            return value->boolean;
+        case NUMBER_TAG:
+            return value->number != 0 && !isnan(value->number);
+        case STRING_TAG:
+            return *(value->string) != '\0';
+        default:
             return true;
-        } else if (a->data[i] > b->data[i]) {
-            return false;
-        }
     }
-    return eq;
 }
 
-#define bigint_lt(a, b) bigint_cmp(a, b, false)
-#define bigint_le(a, b) bigint_cmp(a, b, true)
-#define bigint_gt(a, b) !bigint_cmp(a, b, true)
-#define bigint_ge(a, b) !bigint_cmp(a, b, false)
+#define cast_to_boolean(x) _Generic(x, void*: false, void**: false, bool: x, double: (x->number != 0 && !isnan(x->number)), char*: *(x->string != '\0'), symbol: true, object*: true, array*: true, any*: cast_any_to_boolean(x))
 
-bigint* bigint_copy(bigint* x) {
-    bigint* out;
-    safe_malloc(out, x->size);
-    for (int i = 0; i < x->size; i++) {
-        out->data[i] = x->data[i];
+
+bool eq_any_same_type(any* x, any* y) {
+    switch (x->type) {
+        case UNDEFINED_TAG:
+        case NULL_TAG:
+            return true;
+        case STRING_TAG:
+            return strcmp(x->string, y->string) == 0;
+        default:
+            return x->object == y->object;
     }
-    return out;
 }
 
-#define bigint_last(x) x->data[x->size - 1]
-#define swap_if_larger(a, b) \
-    if (b->size > a->size) { \
-        bigint* temp = a; \
-        a = b; \
-        b = temp; \
-    }
-
-bigint* bigint_add_unsigned(bigint* a, bigint* b, bool sign) {
-    swap_if_larger(a, b);
-    bigint* out = create_bigint(false, false, false, a->size + ((bigint_last(a) + bigint_last(b)) > UINT32_MAX));
-    out->sign = sign;
-    bool carry = 0;
-    for (int i = 0; i < a->size; i++) {
-        if (i > b->size) {
-            out->data[i] = a->data[i];
-        } else {
-            uint64_t value = a->data[i] + b->data[i] + carry;
-            if (value > UINT32_MAX) {
-                carry = true;
-            }
-            out->data[i] = (uint32_t)value;
-        }
-    }
-    return out;
-}
-
-bigint* bigint_sub_unsigned(bigint* a, bigint* b) {
-    swap_if_larger(a, b);
-    bigint* out;
-    safe_malloc(out, sizeof(bigint) + 32 * (a->size - ((bigint_last(a) - bigint_last(b)) == 0)));
-    bool carry = 0;
-    for (int i = 0; i < a->size; i++) {
-        if (i > b->size) {
-            out->data[i] = a->data[i];
-        } else {
-            int64_t value = a->data[i] - b->data[i];
-            if (value < 0) {
-                carry = true;
-                value += UINT32_MAX + 1;
-            }
-            out->data[i] = (uint32_t)value;
-        }
-    }
-    out->sign = carry;
-    return out;
-}
-
-#define bigint_neg(x) bigint_sub_unsigned(0, x)
-
-bigint* bigint_addsub(bigint* a, bigint* b, bool sub) {
-    char signs = (a->sign << 1) + (b->sign ^ sub);
-    if (signs == 0) {
-        return bigint_add_unsigned(a, b, false);
-    } else if (signs == 1) {
-        return bigint_sub_unsigned(a, b);
-    } else if (signs == 2) {
-        return bigint_sub_unsigned(b, a);
+bool eq_any_primitive(any* x, any* y) {
+    if (x->type == y->type) {
+        return equal_any_same_type(x, y);
+    } else if (x->type == SYMBOL_TAG || y->type == SYMBOL_TAG) {
+        return false;
+    } else if (x->type == BOOLEAN_TAG) {
+        x->type = NUMBER_TAG;
+        x->number = x->boolean;
+        return eq_any_primitive(x, y);
+    } else if (y->type == BOOLEAN_TAG) {
+        y->type = NUMBER_TAG;
+        y->number = y->boolean;
+        return eq_any_primitive(x, y);
+    } else if (x->type == NUMBER_TAG) {
+        x->type = STRING_TAG;
+        x->string = number_to_string(x->number, 10);
+        return eq_any_primitive(x, y);
+    } else if (y->type == NUMBER_TAG) {
+        y->type = STRING_TAG;
+        y->string = number_to_string(y->number, 10);
+        return eq_any_primitive(x, y);
     } else {
-        return bigint_add_unsigned(a, b, true);
+        return false;
     }
 }
 
-#define bigint_add(a, b) bigint_addsub(a, b, false)
-#define bigint_sub(a, b) bigint_addsub(a, b, true)
-
-#define bigint_set_uint64(value, k, result) \
-    value->data[k] = result & 0xffffffff; \
-    value->data[k + 1] = result >> 32;
-
-bigint* bigint_mul(bigint* a, bigint* b) {
-    swap_if_larger(a, b);
-    bigint* out;
-    safe_malloc(out, sizeof(bigint) + 32 * (a->size + b->size));
-    bool carry = 0;
-    for (int i = 0; i < a->size; i++) {
-        for (int j = 0; j < b->size; j++) {
-            int k = i * j;
-            uint64_t value = a->data[i] * b->data[j] + out->data[k] + carry;
-            if (out->data[k + 1] == 0) {
-                bigint_set_uint64(out, k, value);
-                carry = 0;
-            } else {
-                uint64_t new_value = value + (out->data[k + 1] << 32);
-                carry = value < new_value;
-                bigint_set_uint64(out, k, new_value);
-            }
-        }
+bool eq_any(any* x, any* y) {
+    if (x->type == y->type) {
+        return equal_any_same_type(x, y);
     }
-    out->sign = a->sign ^ b->sign;
-    return out;
+    if (x->type == UNDEFINED_TAG || x->type == NULL_TAG) {
+        return y->type == UNDEFINED_TAG || y->type == NULL_TAG;
+    }
+    if (x->type == OBJECT_TAG) {
+        x = object_to_primitive(x->object);
+    }
+    if (y->type == OBJECT_TAG) {
+        x = object_to_primitive(x->object);
+    }
+    return equal_any_primitive(x, y);
 }
 
-// struct bigint_divmod_result {
-//     bigint* quotient;
-//     bigint* remainder;
-// }
+bool seq_any(any* x, any* y) {
+    return x->type == y->type && equal_any_same_type(x, y);
+}
 
-// bigint_divmod_result* bigint_divmod(bigint* a, bigint* b) {
-//     return (bigint_divmod_result){quotient, remainder};
-// }
+bool eq_any_bool(any* x, bool y) {
+    any* anyY;
+}
+
+#define eq_any_other(x, y) _Generic(y, \
+    void*: x->type == UNDEFINED_TAG || x->type == NULL_TAG, \
+    void**: x->type == UNDEFINED_TAG || x->type == NULL_TAG, \
+    bool: x->type == BOOLEAN_TAG ? x->boolean == y : true, \
+    default: true \
+)
+
+#define eq(x, y) _Generic(y, any*: eq_any_other(y, x), default: _Generic(x, \
+    void*: _Generic(y, void*: true, void**: true, default: false), \
+    void**: _Generic(y, void*: true, void**: true, default: false), \
+    bool: _Generic(y, void*: false, void**: false, bool: x == y, double: x == y, char*: strcmp(x ? "1" : "0", y) == 0, symbol: false, object*: eq_any_other(object_to_primitive(y), x), array*: strcmp(cast_to_string(x), array_to_string(y)) == 0), \
+    double: _Generic(y, void*: false, void**: false, bool: x == y, double: x == y, char*: strcmp(number_to_string(x), y) == 0, symbol: false, default: eq_any_other(object_to_primitive(y), x)), \
+    char*: strcmp(x, cast_to_string(y)) == 0, \
+    symbol: _Generic(y, symbol: true, default: false), \
+    object*: eq_any_other(object_to_primitive(x), y), \
+    array*: eq_any_other(array_to_string(x), y), \
+    any*: eq_any_other(x, y), \
+))
+
+int test() {
+    eq(1.0, 1.0);
+}
 
 
 #endif

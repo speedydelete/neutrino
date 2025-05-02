@@ -1,13 +1,13 @@
 {
     "compilerOptions": {
-        "declaration": true,
-        "emitDeclarationOnly": false,
-        "strict": true,
-        "esModuleInterop": true,
         "module": "NodeNext",
         "outDir": "lib",
-        "rootDir": "src_old",
-        "sourceMap": true
+        "rootDir": "src",
+        "strict": true,
+        "esModuleInterop": true,
+        "declaration": true,
+        "emitDeclarationOnly": false,
+        "sourceMap": true,
     },
-    "files": ["src_old/index.ts"]
+    "files": ["src/index.ts"]
 }
