@@ -3,11 +3,11 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-parameter
 LDFLAGS = -lm
 
-MAIN = ./builtins
-CORE = $(MAIN)/core
-OPS = $(MAIN)/ops
+BUILTINS = ./builtins
+CORE = $(BUILTINS)/core
+OPS = $(BUILTINS)/ops
 
-SRCS = $(MAIN)/neutrino.c \
+SRCS = main.c $(BUILTINS)/neutrino.h \
 	$(CORE)/array.c $(CORE)/object.c $(CORE)/types.c \
 	$(OPS)/eq.c $(OPS)/seq.c
 

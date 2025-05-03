@@ -253,5 +253,7 @@ static inline bool eq_any_array(any* x, array* y) {return eq_any_any(x, create_a
     ) \
 )(x, y)
 
+#define neq(x, y) !eq(x, y)
+
 
 #endif
