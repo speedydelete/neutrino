@@ -22,10 +22,9 @@
         } \
     } while (0);
 
+#define JS_NULL (void**)0
 
-void** js_null = (void**)0;
-
-double NaN = (double)NAN;
+#define NaN (double)NAN
 
 
 typedef uint64_t symbol;
@@ -82,7 +81,7 @@ int hash4(char* str) {
     return hash;
 }
 
-void set_key(object* obj, char* key, void* value);
+void set_string(object* obj, char* key, void* value);
 
 object* create_object(object* proto, int length, ...) {
     object* out;
@@ -95,7 +94,7 @@ object* create_object(object* proto, int length, ...) {
     va_list args;
     va_start(args, length);
     for (int i = 0; i < length/2; i++) {
-        set_key(out, va_arg(args, char*), va_arg(args, void*));
+        set_string(out, va_arg(args, char*), va_arg(args, void*));
     }
     va_end(args);
     return out;
@@ -137,7 +136,7 @@ void* get_symbol(object* obj, symbol key) {
     return NULL;
 }
 
-#define get_obj(obj, key) _Generic(key, char*: get_string(obj, key), symbol: get_symbol(obj, key))
+#define get_obj(obj, key) _Generic((key), char*: get_string, symbol: get_symbol)(obj, key)
 
 #define create_prop(name, key, value) \
     safe_malloc(name, sizeof(struct property) - sizeof(void*)); \
@@ -199,7 +198,7 @@ void set_symbol(object* obj, symbol key, void* value) {
     prop->next = new_prop;
 }
 
-#define set_obj(obj, key, value) _Generic(key, char*: set_string(obj, key, value), symbol: set_symbol(obj, key, value))
+#define set_obj(obj, key, value) _Generic((key), char*: set_string, symbol: set_symbol)(obj, key, value)
 
 void set_string_accessor(object* obj, char* key, void* (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
     int hashed = hash4(key);
@@ -243,7 +242,7 @@ void set_symbol_accessor(object* obj, symbol key, void* (*get)(struct object* th
     prop->next = new_prop;
 }
 
-#define set_accessor(obj, key, get, set) _Generic(key, char*: set_string_accessor(obj, key, get, set), symbol: set_symbol_accessor(obj, key, get, set))
+#define set_accessor(obj, key, get, set) _Generic((key), char*: set_string_accessor, symbol: set_symbol_accessor)(obj, key, get, set)
 
 bool delete_string(object* obj, char* key) {
     int hashed = hash4(key);
@@ -289,7 +288,7 @@ bool delete_symbol(object* obj, symbol key) {
     return false;
 }
 
-#define delete(obj, key) _Generic(key, char*: delete_key(obj, key), symbol: delete_symbol(obj, key))
+#define delete(obj, key) _Generic((key), char*: delete_key, symbol: delete_symbol)(obj, key)
 
 bool has_string(object* obj, char* key) {
     struct property* prop = obj->data[hash4(key)];
@@ -313,7 +312,7 @@ bool has_symbol(object* obj, int key) {
     return false;
 }
 
-#define has_obj(obj, key) _Generic(key, char*: has_string(obj, key), symbol: has_symbol(obj, key))
+#define has_obj(obj, key) _Generic((key), char*: has_string, symbol: has_symbol)(obj, key)
 
 int num_keys(object* obj) {
     int count = 0;
@@ -326,21 +325,6 @@ int num_keys(object* obj) {
         }
     }
     return count;
-}
-
-array* get_keys(object* obj) {
-    array* out = create_array(num_keys(obj));
-    int index = 0;
-    struct property* prop;
-    for (int i = 0; i < 16; i++) {
-        prop = obj->data[i];
-        while (prop != NULL) {
-            out->items[index] = prop->key;
-            index++;
-            prop = prop->next;
-        }
-    }
-    return out;
 }
 
 #define call_obj(obj, method, ...) ((void*(*)())get_obj(obj, method))(obj, ## __VA_ARGS__)
@@ -378,6 +362,22 @@ array* create_array_with_items(int length, ...) {
 }
 
 
+array* get_keys(object* obj) {
+    array* out = create_array(num_keys(obj));
+    int index = 0;
+    struct property* prop;
+    for (int i = 0; i < 16; i++) {
+        prop = obj->data[i];
+        while (prop != NULL) {
+            out->items[index] = prop->key;
+            index++;
+            prop = prop->next;
+        }
+    }
+    return out;
+}
+
+
 array* get_rest_arg_internal(va_list args, int count) {
     array* out = create_array(count);
     for (int i = 0; i < count; i++) {
@@ -387,6 +387,25 @@ array* get_rest_arg_internal(va_list args, int count) {
 }
 
 #define get_rest_arg(name) array* name = get_rest_arg_internal(args, count - processed);
+
+
+inline char* return_undefined(void* x) {return "undefined";}
+inline char* return_null(void** x) {return "null";}
+inline char* return_boolean(bool x) {return "boolean";}
+inline char* return_number(double x) {return "number";}
+inline char* return_string(char* x) {return "string";}
+inline char* return_symbol(symbol x) {return "symbol";}
+inline char* return_object(object* x) {return "object";}
+inline char* return_object_array(array* x) {return "array";}
+
+inline double identity_number(double x) {return x;}
+inline double identity_number_boolean(bool x) {return (double)x;}
+inline char* identity_string(char* x) {return x;}
+
+inline double return_0_null(void** x) {return 0;}
+
+inline double return_nan_undefined(void* x) {return NaN;}
+inline double return_nan_symbol(symbol x) {return NaN;}
 
 
 enum Type {
@@ -406,23 +425,11 @@ typedef struct any {
         bool boolean;
         double number;
         char* string;
-        symbol* symbol;
+        symbol symbol;
         object* object;
         array* array;
     };
 } any;
-
-void create_empty_any(any* out, enum Type type) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = type;
-    return out;
-}
-
-#define to_any(out, x) \
-    safe_malloc(out, sizeof(any)); \
-    out->type = _Generic(x, void*: UNDEFINED_TAG, void**: NULL_TAG, bool: BOOLEAN_TAG, double: NUMBER_TAG, char*: STRING_TAG, symbol: SYMBOL_TAG, object*: OBJECT_TAG, array*: OBJECT_TAG, any*: x->type); \
-    _Generic(x, void*: 0, void**: 0, bool: out->boolean = x, double: out->number = x, char*: out->string = x, symbol: out->symbol = x, object*: out->object = x, array*: out->object = x, any*: x->type);
 
 char* js_typeof_any(any* value) {
     switch (value->type) {
@@ -439,7 +446,17 @@ char* js_typeof_any(any* value) {
     }
 }
 
-#define js_typeof(x) _Generic(x, void*: "undefined", void**: "null", bool: "boolean", double: "number", char*: "string", symbol: "symbol", object*: "object", array*: "object", any*: js_typeof_any(value))
+#define js_typeof(x) _Generic((x), \
+    void*: return_undefined, \
+    void**: return_object, \
+    bool: return_boolean, \
+    double: return_number, \
+    char*: return_string, \
+    symbol: return_symbol, \
+    object*: return_object, \
+    array*: return_object_array, \
+    any*: js_typeof_any \
+)(x)
 
 any* object_to_primitive(object* value) {
     any* out = NULL;
@@ -525,11 +542,13 @@ double cast_any_to_number(any* value) {
         case OBJECT_TAG:
             return cast_any_to_number(object_to_primitive(value->object));
         default:
-            return parse_number(array_to_primitive(value->array));
+            return parse_number(array_to_string(value->array));
     }
 }
 
-#define cast_to_number(x) _Generic(x, void*: NaN, void**: 0, bool: (double)(x), double: x, char*: parse_number(x), symbol: NaN, object*: cast_any_to_number(object_to_primitive(x->object)), array*: parse_number(array_to_string(x->object)))
+inline double cast_to_number_object(object* x) {return cast_any_to_number(object_to_primitive(x));}
+inline double cast_to_number_array(array* x) {return parse_number(array_to_string(x));}
+#define cast_to_number(x) _Generic((x), void*: return_nan_undefined, void**: return_0_null, bool: identity_number_boolean, double: identity_number, char*: parse_number, symbol: return_nan_symbol, object*: cast_to_number_object, array*: cast_to_number_array)(x)
 
 const char* BASE_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";
 
@@ -553,23 +572,28 @@ char* number_to_string(double value, int base) {
     }
     long long whole = fmod(value, 1);
     double frac = value - whole;
-    char out[30];
+    char* out;
+    safe_malloc(out, 30);
     int i;
     for (i = 0; i < 30 && whole > 0; i++) {
         out[i] = BASE_CHARS[whole % base];
         whole /= base;
     }
     if (frac != 0) {
-        out[i++] = i;
+        out[i++] = '.';
         frac *= base;
         for (; i < 30 && frac > 0; i++) {
             out[i] = BASE_CHARS[(int)fmod(frac, 1)];
             frac *= base;
         }
     }
-    out[i] = NULL;
+    out[i] = '\0';
     return out;
 }
+
+inline char* cast_to_string_boolean(x) {return x ? "true" : "false";}
+inline char* cast_to_string_object(object* x) {return cast_to_string(object_to_primitive(x));}
+#define cast_to_string(x) _Generic((x), void*: return_undefined, void**: return_null, bool:cast_to_string_boolean, double: number_to_string, char*: identity_string, symbol: return_symbol, object*: cast_to_string_object, array*: array_to_string, any*: cast_any_to_string)(x)
 
 char* cast_any_to_string(any* value) {
     switch (value->type) {
@@ -589,8 +613,6 @@ char* cast_any_to_string(any* value) {
             return array_to_string(value->array);
     }
 }
-
-#define cast_to_string(x) _Generic(x, void*: "undefined", void**: "null", bool: (x ? "true" : "false"), double: number_to_string(x), char*: x, symbol: "Symbol", object*: cast_to_string(object_to_primitive(value->object)), array*: array_to_string(value->array));
 
 bool cast_any_to_boolean(any* value) {
     switch (value->type) {
@@ -669,16 +691,36 @@ bool seq_any(any* x, any* y) {
     return x->type == y->type && equal_any_same_type(x, y);
 }
 
-bool eq_any_bool(any* x, bool y) {
-    any* anyY;
+any* create_any_value(enum Type type, double value) {
+    any* out;
+    safe_malloc(out, sizeof(any*));
+    out->type = type;
+    out->number = value;
 }
 
-#define eq_any_other(x, y) _Generic(y, \
-    void*: x->type == UNDEFINED_TAG || x->type == NULL_TAG, \
-    void**: x->type == UNDEFINED_TAG || x->type == NULL_TAG, \
-    bool: x->type == BOOLEAN_TAG ? x->boolean == y : true, \
-    default: true \
-)
+any* create_any_pointer(enum Type type, void* value) {
+    any* out;
+    safe_malloc(out, sizeof(any*));
+    out->type = type;
+    if (type == BOOLEAN_TAG) {
+        out->boolean = (bool)value;
+    } else {
+        out->string = value;
+    }
+    return out;
+}
+
+#define eq_any_other(x, y) eq_any(x, _Generic(y, \
+    void*: create_any_pointer(UNDEFINED_TAG, NULL), \
+    void**: create_any_pointer(NULL_TAG, JS_NULL), \
+    bool: create_any_value(BOOLEAN_TAG, y), \
+    double: create_any_value(NUMBER_TAG, y), \
+    char*: create_any_pointer(STRING_TAG, y), \
+    symbol: create_any_value(SYMBOL_TAG, y), \
+    object*: create_any_pointer(OBJECT_TAG, y), \
+    array*: create_any_pointer(ARRAY_TAG, y,), \
+    any*: eq_any(x, y) \
+))
 
 #define eq(x, y) _Generic(y, any*: eq_any_other(y, x), default: _Generic(x, \
     void*: _Generic(y, void*: true, void**: true, default: false), \
@@ -689,11 +731,12 @@ bool eq_any_bool(any* x, bool y) {
     symbol: _Generic(y, symbol: true, default: false), \
     object*: eq_any_other(object_to_primitive(x), y), \
     array*: eq_any_other(array_to_string(x), y), \
-    any*: eq_any_other(x, y), \
+    any*: eq_any_other(x, y) \
 ))
 
-int test() {
-    eq(1.0, 1.0);
+
+int main() {
+    printf("%d", eq(1.0, 1.0));
 }
 
 
