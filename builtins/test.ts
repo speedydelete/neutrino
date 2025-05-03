@@ -1,3 +1,4 @@
+
 function test(): number {
     return 5;
 }

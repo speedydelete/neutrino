@@ -1,9 +1,10 @@
 
+#ifndef Neutrino_op_eq
+#define Neutrino_op_eq
+
 #include <stdbool.h>
 #include <string.h>
 #include "../core/types.h"
-
-#include "eq.h"
 
 
 static inline bool eq_any_any_same_type(any* x, any* y) {
@@ -149,6 +150,7 @@ static inline bool eq_any_symbol(any* x, symbol y) {return eq_any_any(x, create_
 static inline bool eq_any_object(any* x, object* y) {return eq_any_any(x, create_any_from_object(y));}
 static inline bool eq_any_array(any* x, array* y) {return eq_any_any(x, create_any_from_array(y));}
 
+
 #define eq(x, y) _Generic((x), \
     void*: _Generic((y), \
         void*: eq_undefined_undefined, \
@@ -250,3 +252,6 @@ static inline bool eq_any_array(any* x, array* y) {return eq_any_any(x, create_a
         any*: eq_any_any \
     ) \
 )(x, y)
+
+
+#endif

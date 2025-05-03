@@ -14,7 +14,6 @@ typedef struct array {
 array* create_array(int length);
 array* create_array_with_items(int length, ...);
 
-
 array* get_keys(object* obj);
 
 array* get_rest_arg_internal(va_list args, int count);

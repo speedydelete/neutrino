@@ -3,10 +3,10 @@
 #include "core/array.h"
 #include "core/types.h"
 
-#include "ops/eq.h"
-#include "ops/seq.h"
+#include "ops/eq.c"
+#include "ops/seq.c"
 
 
 int main() {
-    printf("%d\n", eq(1.0, 1.0));
+    printf("%d\n", seq((void**)0, (void*)0));
 }

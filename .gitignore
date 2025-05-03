@@ -1,4 +1,6 @@
 /node_modules
 /lib
-.temp.c
+/main
+/.temp.c
 *.out
+*.o

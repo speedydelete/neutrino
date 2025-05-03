@@ -37,7 +37,7 @@ var undefined = neutrino.c`NULL` as undefined;
 type CallableFunction = Function;
 type NewableFunction = Function;
 
-type IArguments = never;
+interface IArguments {}
 
 
 interface ObjectConstructor {

@@ -3,54 +3,13 @@
 #include <stdbool.h>
 #include <inttypes.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include "object.h"
 
 
-typedef uint64_t symbol;
-symbol next_symbol = 0;
-#define create_symbol() next_symbol++
-
-symbol Symbol_toPrimitive;
-
-void create_well_known_symbols() {
-    Symbol_toPrimitive = create_symbol();
-}
-
-
-struct object;
-
-struct property {
-    struct property* next;
-    char* key;
-    bool is_accessor;
-    union {
-        void* value;
-        struct {
-            void* (*get)(struct object* this);
-            void (*set)(struct object* this, void* value);
-        } funcs;
-    };
-};
-
-struct symbol_property {
-    struct symbol_property* next;
-    symbol key;
-    bool is_accessor;
-    union {
-        void* value;
-        struct {
-            void* (*get)(struct object* this);
-            void (*set)(struct object* this, void* value);
-        } funcs;
-    };
-};
-
-typedef struct object {
-    struct object* prototype;
-    struct property* data[16];
-    struct symbol_property* symbols;
-} object;
+symbol next_symbol = 2;
+symbol Symbol_toPrimitive = 1;
 
 
 int hash4(char* str) {
@@ -61,7 +20,6 @@ int hash4(char* str) {
     return hash;
 }
 
-void set_string(object* obj, char* key, void* value);
 
 object* create_object(object* proto, int length, ...) {
     object* out;
@@ -79,6 +37,7 @@ object* create_object(object* proto, int length, ...) {
     va_end(args);
     return out;
 }
+
 
 void* get_string(object* obj, char* key) {
     struct property* prop = obj->data[hash4(key)];
@@ -116,22 +75,6 @@ void* get_symbol(object* obj, symbol key) {
     return NULL;
 }
 
-#define get_obj(obj, key) _Generic((key), char*: get_string, symbol: get_symbol)(obj, key)
-
-#define create_prop(name, key, value) \
-    safe_malloc(name, sizeof(struct property) - sizeof(void*)); \
-    name->next = NULL; \
-    name->key = key; \
-    name->is_accessor = false; \
-    name->value = value;
-
-#define create_accessor(name, key, get, set) \
-    safe_malloc(name, sizeof(struct property)); \
-    name->next = NULL; \
-    name->key = key; \
-    name->is_accessor = true; \
-    name->funcs.get = get; \
-    name->funcs.set = set;
 
 void set_string(object* obj, char* key, void* value) {
     int hashed = hash4(key);
@@ -178,7 +121,6 @@ void set_symbol(object* obj, symbol key, void* value) {
     prop->next = new_prop;
 }
 
-#define set_obj(obj, key, value) _Generic((key), char*: set_string, symbol: set_symbol)(obj, key, value)
 
 void set_string_accessor(object* obj, char* key, void* (*get)(struct object* this), void (*set)(struct object* this, void* value)) {
     int hashed = hash4(key);
@@ -222,7 +164,6 @@ void set_symbol_accessor(object* obj, symbol key, void* (*get)(struct object* th
     prop->next = new_prop;
 }
 
-#define set_accessor(obj, key, get, set) _Generic((key), char*: set_string_accessor, symbol: set_symbol_accessor)(obj, key, get, set)
 
 bool delete_string(object* obj, char* key) {
     int hashed = hash4(key);
@@ -268,7 +209,6 @@ bool delete_symbol(object* obj, symbol key) {
     return false;
 }
 
-#define delete(obj, key) _Generic((key), char*: delete_key, symbol: delete_symbol)(obj, key)
 
 bool has_string(object* obj, char* key) {
     struct property* prop = obj->data[hash4(key)];
@@ -281,7 +221,7 @@ bool has_string(object* obj, char* key) {
     return false;
 }
 
-bool has_symbol(object* obj, int key) {
+bool has_symbol(object* obj, symbol key) {
     struct symbol_property* prop = obj->symbols;
     while (prop != NULL) {
         if (prop->key == key) {
@@ -292,7 +232,6 @@ bool has_symbol(object* obj, int key) {
     return false;
 }
 
-#define has_obj(obj, key) _Generic((key), char*: has_string, symbol: has_symbol)(obj, key)
 
 int num_keys(object* obj) {
     int count = 0;
@@ -307,9 +246,6 @@ int num_keys(object* obj) {
     return count;
 }
 
-#define call_obj(obj, method, ...) ((void*(*)())get_obj(obj, method))(obj, ## __VA_ARGS__)
 
 void (*new_target)() = NULL;
 long new_target_tag = 0;
-#define new(proto, func, ...) ((new_target = func) func(create_object(proto, 0), ## __VA_ARGS__))
-

@@ -15,6 +15,10 @@
         "stdio.h": "c",
         "object.h": "c",
         "stdarg.h": "c",
-        "typeinfo": "c"
+        "typeinfo": "c",
+        "set": "c",
+        "stdbool.h": "c",
+        "types.h": "c",
+        "safe_malloc.h": "c"
     }
 }

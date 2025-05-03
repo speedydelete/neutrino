@@ -6,15 +6,13 @@
 #include <stdbool.h>
 #include <inttypes.h>
 #include <stdarg.h>
+#include <string.h>
 
 
 typedef uint64_t symbol;
-symbol next_symbol = 0;
-#define create_symbol() next_symbol++
-
-symbol Symbol_toPrimitive;
-
-void create_well_known_symbols();
+extern symbol next_symbol;
+extern symbol Symbol_toPrimitive;
+static inline symbol create_symbol() {return next_symbol++;}
 
 
 struct object;
@@ -92,17 +90,19 @@ bool delete_symbol(object* obj, symbol key);
 #define delete(obj, key) _Generic((key), char*: delete_key, symbol: delete_symbol)(obj, key)
 
 bool has_string(object* obj, char* key);
-bool has_symbol(object* obj, int key);
+bool has_symbol(object* obj, symbol key);
 
 #define has_obj(obj, key) _Generic((key), char*: has_string, symbol: has_symbol)(obj, key)
 
 int num_keys(object* obj);
 
+
 #define call_obj(obj, method, ...) ((void*(*)())get_obj(obj, method))(obj, ## __VA_ARGS__)
 
-void (*new_target)();
-long new_target_tag;
 #define new(proto, func, ...) ((new_target = func) func(create_object(proto, 0), ## __VA_ARGS__))
+
+extern void (*new_target)();
+extern long new_target_tag;
 
 
 #endif

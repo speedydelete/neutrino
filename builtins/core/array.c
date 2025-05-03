@@ -5,11 +5,6 @@
 #include "array.h"
 
 
-typedef struct array {
-    int length;
-    void** items;
-} array;
-
 array* create_array(int length) {
     struct array* out;
     safe_malloc(out, sizeof(array));
@@ -32,7 +27,6 @@ array* create_array_with_items(int length, ...) {
     return out;
 }
 
-
 array* get_keys(object* obj) {
     array* out = create_array(num_keys(obj));
     int index = 0;
@@ -48,7 +42,6 @@ array* get_keys(object* obj) {
     return out;
 }
 
-
 array* get_rest_arg_internal(va_list args, int count) {
     array* out = create_array(count);
     for (int i = 0; i < count; i++) {
@@ -56,5 +49,3 @@ array* get_rest_arg_internal(va_list args, int count) {
     }
     return out;
 }
-
-#define get_rest_arg(name) array* name = get_rest_arg_internal(args, count - processed);

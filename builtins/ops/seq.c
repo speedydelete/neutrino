@@ -1,13 +1,25 @@
 
+#ifndef Neutrino_op_seq
+#define Neutrino_op_seq
+
 #include <stdbool.h>
 #include <string.h>
 #include "../core/types.h"
 
-#include "seq.h"
-
 
 static bool seq_any_any(any* x, any* y) {
-    return x->type == y->type && eq_any_any_same_type(x, y);
+    if (x->type != y->type) {
+        return false;
+    }
+    switch (x->type) {
+        case UNDEFINED_TAG:
+        case NULL_TAG:
+            return true;
+        case STRING_TAG:
+            return strcmp(x->string, y->string) == 0;
+        default:
+            return x->object == y->object;
+    }
 }
 
 static inline bool seq_undefined_undefined(void* x, void* y) {return true;}
@@ -191,3 +203,8 @@ static inline bool seq_any_array(any* x, array* y) {return seq_any_any(x, create
         array*: seq_any_array, \
         any*: seq_any_any) \
 )(x, y)
+
+#define nseq(x, y) !seq(x, y)
+
+
+#endif
