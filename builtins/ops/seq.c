@@ -111,7 +111,7 @@ static inline bool seq_any_symbol(any* x, symbol y) {return seq_any_any(x, creat
 static inline bool seq_any_object(any* x, object* y) {return seq_any_any(x, create_any_from_object(y));}
 static inline bool seq_any_array(any* x, array* y) {return seq_any_any(x, create_any_from_array(y));}
 
-#define seq(x, y) _Generic((x), \
+#define seq(x, y) (_Generic((x), \
     void*: _Generic((y), \
         void*: seq_undefined_undefined, \
         void**: seq_undefined_null, \
@@ -202,7 +202,7 @@ static inline bool seq_any_array(any* x, array* y) {return seq_any_any(x, create
         object*: seq_any_object, \
         array*: seq_any_array, \
         any*: seq_any_any) \
-)(x, y)
+)(x, y))
 
 #define nseq(x, y) !seq(x, y)
 

@@ -7,9 +7,9 @@ BUILTINS = ./builtins
 CORE = $(BUILTINS)/core
 OPS = $(BUILTINS)/ops
 
-SRCS = main.c $(BUILTINS)/neutrino.h \
+SRCS = main.c $(BUILTINS)/neutrino.c \
 	$(CORE)/array.c $(CORE)/object.c $(CORE)/types.c \
-	$(OPS)/eq.c $(OPS)/seq.c
+	$(OPS)/eq.c $(OPS)/seq.c $(OPS)/compare.c $(OPS)/arithmetic.c
 
 OBJS = $(SRCS:.c=.o)
 

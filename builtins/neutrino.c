@@ -8,5 +8,9 @@
 
 #include "ops/eq.c"
 #include "ops/seq.c"
+#include "ops/compare.c"
+#include "ops/add.c"
+#include "ops/arithmetic.c"
+#include "ops/nc.c"
 
 #endif

@@ -151,7 +151,7 @@ static inline bool eq_any_object(any* x, object* y) {return eq_any_any(x, create
 static inline bool eq_any_array(any* x, array* y) {return eq_any_any(x, create_any_from_array(y));}
 
 
-#define eq(x, y) _Generic((x), \
+#define eq(x, y) (_Generic((x), \
     void*: _Generic((y), \
         void*: eq_undefined_undefined, \
         void**: eq_undefined_null, \
@@ -251,7 +251,7 @@ static inline bool eq_any_array(any* x, array* y) {return eq_any_any(x, create_a
         array*: eq_any_array, \
         any*: eq_any_any \
     ) \
-)(x, y)
+)(x, y))
 
 #define neq(x, y) !eq(x, y)
 

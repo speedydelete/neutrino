@@ -9,7 +9,8 @@
 #include "array.h"
 
 
-#define NaN (double)NAN
+#define NaN ((double)NAN)
+#define JS_NULL ((void**)0)
 
 
 static inline char* return_undefined(void* value) {return "undefined";}
@@ -102,7 +103,7 @@ double cast_any_to_number(any* value);
 
 static inline double cast_to_number_object(object* x) {return cast_any_to_number(object_to_primitive(x));}
 static inline double cast_to_number_array(array* x) {return parse_number(array_to_string(x));}
-#define cast_to_number(x) _Generic((x), \
+#define cast_to_number(x) (_Generic((x), \
     void*: return_nan_undefined, \
     void**: return_0_null, \
     bool: identity_number_boolean, \
@@ -112,14 +113,14 @@ static inline double cast_to_number_array(array* x) {return parse_number(array_t
     object*: cast_to_number_object, \
     array*: cast_to_number_array, \
     any*: cast_any_to_number \
-)(x)
+)(x))
 
 extern const char* BASE_CHARS;
 
 char* number_to_string(double value, int base);
 char* cast_any_to_string(any* value);
 
-#define cast_to_string(x) _Generic((x), void*: return_undefined, void**: return_null, bool: cast_to_string_boolean, double: number_to_string, char*: identity_string, symbol: return_symbol, object*: cast_to_string_object, array*: array_to_string, any*: cast_any_to_string)(x)
+#define cast_to_string(x) (_Generic((x), void*: return_undefined, void**: return_null, bool: cast_to_string_boolean, double: number_to_string, char*: identity_string, symbol: return_symbol, object*: cast_to_string_object, array*: array_to_string, any*: cast_any_to_string)(x))
 
 static inline char* cast_to_string_boolean(bool x) {return x ? "true" : "false";}
 static inline char* cast_to_string_object(object* x) {return cast_to_string(object_to_primitive(x));}
@@ -128,7 +129,7 @@ bool cast_any_to_boolean(any* value);
 
 static inline bool cast_to_boolean_number(double x) {return x != 0 && !isnan(x);}
 static inline bool cast_to_boolean_string(char* x) {return *x != '\0';}
-#define cast_to_boolean(x) _Generic(x, void*: return_false_undefined, void**: return_false_undefined, bool: identity_boolean, double: cast_to_boolean_number, char*: cast_to_boolean_string, symbol: return_true_symbol, object*: return_true_object, array*: return_true_array, any*: cast_any_to_boolean)(x)
+#define cast_to_boolean(x) (_Generic(x, void*: return_false_undefined, void**: return_false_undefined, bool: identity_boolean, double: cast_to_boolean_number, char*: cast_to_boolean_string, symbol: return_true_symbol, object*: return_true_object, array*: return_true_array, any*: cast_any_to_boolean)(x))
 
 
 #endif

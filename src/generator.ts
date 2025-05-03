@@ -274,6 +274,9 @@ export class Generator extends a.NodeGenerator {
                 } else {
                     let func = UNARY_OP_FUNCS[node.op];
                     if (node.op === '++' || node.op === '--') {
+                        if (node.arg.type === 'Identifier') {
+                            return node.postfix ? arg + node.op : node.op + arg;
+                        }
                         if (node.postfix) {
                             func = 'postfix_' + func;
                         }
