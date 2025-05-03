@@ -11,6 +11,10 @@
         "type_traits": "c",
         "utility": "c",
         "compare": "c",
-        "variant": "c"
+        "variant": "c",
+        "stdio.h": "c",
+        "object.h": "c",
+        "stdarg.h": "c",
+        "typeinfo": "c"
     }
 }
