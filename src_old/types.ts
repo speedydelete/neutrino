@@ -1,85 +1,8 @@
 
-import * as b from '@babel/types';
-import {CompilerError} from './errors';
 import {highlight, HighlightColors} from './highlighter';
-import {t} from '.';
 
 
-export class Scope {
-
-    parent: Scope | null;
-    vars: Map<string, Type> = new Map();
-    types: Map<string, Type> = new Map();
-
-    constructor(parent?: Scope | null) {
-        this.parent = parent ?? null;
-    }
-
-    get(name: string): Type {
-        let type = this.vars.get(name);
-        if (type !== undefined) {
-            return type;
-        } else if (this.parent) {
-            return this.parent.get(name);
-        } else {
-            throw new CompilerError('ReferenceError', `${name} is not defined`);
-        }
-    }
-
-    has(name: string): boolean {
-        return this.vars.has(name) || (this.parent ? this.parent.has(name) : false);
-    }
-
-    set(name: string, type: Type): void {
-        this.vars.set(name, type);
-    }
-
-    getType(name: string): Type {
-        let type = this.types.get(name);
-        if (type !== undefined) {
-            return type;
-        } else if (this.parent) {
-            return this.parent.getType(name);
-        } else {
-            throw new CompilerError('ReferenceError', `${name} is not defined`);
-        }
-    }
-
-    hasType(name: string): boolean {
-        return this.types.has(name) || (this.parent ? this.parent.hasType(name) : false);
-    }
-
-    setType(name: string, type: Type): void {
-        this.types.set(name, type);
-    }
-
-    isShadowed(name: string, type: boolean = false): boolean {
-        let scope: Scope | null = this;
-        let wasFound = false;
-        while (scope) {
-            let vars = type ? scope.vars : scope.types;
-            if (vars.has(name)) {
-                if (wasFound) {
-                    return true;
-                } else {
-                    wasFound = true;
-                }
-            }
-            scope = scope.parent;
-        }
-        return false;
-    }
-
-    setLValue(node: b.LVal, type?: Type): void {
-        if (node.type === 'Identifier') {
-            this.set(node.name, type ?? parse(node.typeAnnotation));
-        }
-    }
-
-}
-
-
-export type BaseType<T extends string> = {type: T;}
+export type BaseType<T extends string> = {type: T};
 export type ValueType<T extends string, V> = BaseType<T> & {value: V};
 export type ValueTypeFactory<T extends string, V> = BaseType<T> & (<W extends V>(value: W) => ValueType<T, W>);
 
@@ -129,7 +52,7 @@ export {
 export const boolean: BooleanType = createValueTypeFactory<'boolean', boolean>('boolean');
 export const number: NumberType = createValueTypeFactory<'number', number>('number');
 export const string: StringType = createValueTypeFactory<'string', string>('string');
-export const symbol: SymbolType = addToString(Object.assign(() => createType('symbol', {unique: true as const}), {type: 'symbol' as const, unique: false as const}));
+export const symbol: SymbolType = Object.assign(() => ({type: 'symbol' as const, unique: true as const}), {type: 'symbol' as const, unique: false as const});
 export const bigint: BigIntType = createValueTypeFactory<'bigint', bigint>('bigint');
 
 
@@ -144,15 +67,14 @@ export interface ObjectCallData {
 interface ObjectType extends BaseType<'object'> {
     props: {[key: PropertyKey]: Type};
     call: ObjectCallData | null;
-    construct: ObjectCallData | null;
     indexes: [string, Type, Type][];
 };
 
-export type ObjectTypeKeyword = BaseType<'object'> & ((props?: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes?: [string, Type, Type][], construct?: ObjectCallData | null) => ObjectType) & {props: {[key: PropertyKey]: Type}, call: null, indexes: []};
+export type ObjectTypeKeyword = BaseType<'object'> & ((props: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes?: [string, Type, Type][]) => ObjectType) & {props: {[key: PropertyKey]: Type}, call: null, indexes: []};
 
 // @ts-ignore
-export const object: ObjectTypeKeyword = addToString(Object.assign(function(props: {[key: PropertyKey]: Type} = {}, call: ObjectCallData | null = null, indexes: [string, Type, Type][] = [], construct: ObjectCallData | null = null): ObjectType {
-    return {type: 'object', props, call, indexes, construct};
+export const object: ObjectTypeKeyword = addToString(Object.assign(function(props: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes: [string, Type, Type][] = []): ObjectType {
+    return {type: 'object', props, call: call ?? null, indexes};
 }, {type: 'object' as const, props: {} as const, call: null, indexes: [] as const}));
 
 
@@ -189,14 +111,10 @@ export function arrayIndex(array: ArrayType, index: number): Type {
 }
 
 
-function function_(params: Parameter[], returnType: Type, restParam?: Parameter | null): ObjectType {
+function function_(params: Parameter[], returnType: Type, restParam?: Parameter | null) {
     return object({prototype: object({})}, {params, returnType, restParam: restParam ?? null});
 }
 export {function_ as function};
-
-export function constructor(params: Parameter[], returnType: Type, restParam?: Parameter | null): ObjectType {
-    return object({prototype: object({})}, null, [], {params, returnType, restParam: restParam ?? null});
-}
 
 
 export type {
@@ -212,20 +130,95 @@ export type {
 
 export type Union = BaseType<'union'> & {types: Type[]};
 export function union(...types: Type[]): Union {
-    return createType('union', {types});
+    return {type: 'union', types};
 }
 
 export type Intersection = BaseType<'intersection'> & {types: Type[]};
 export function intersection(...types: Type[]): Intersection {
-    return createType('intersection', {types});
+    return {type: 'intersection', types};
 }
+
+export type Import = BaseType<'import'> & {module: Type};
+function createImport(module: Type): Import {
+    return {type: 'import', module};
+}
+export {createImport as import};
 
 
 export type NonLiteralPrimitive = Undefined | Null | BooleanType | NumberType | StringType | SymbolType | BigIntType;
 export type PrimitiveLiteral = BooleanLiteral | NumberLiteral | StringLiteral | UniqueSymbol | BigIntLiteral;
 export type Primitive = NonLiteralPrimitive | PrimitiveLiteral;
 
-export type Type = Any | Unknown | Never | Primitive | Void | ObjectType | ObjectTypeKeyword | ArrayType | Union | Intersection;
+export type JSType = Any | Unknown | Never | Primitive | Void | ObjectType | ObjectTypeKeyword | ArrayType | Union | Intersection | Import;
+
+
+export type Char = ValueTypeFactory<'char', bigint>;
+export type CharLiteral = ReturnType<Char>;
+export type UChar = ValueTypeFactory<'unsigned char', bigint>;
+export type UCharLiteral = ReturnType<UChar>;
+export type Short = ValueTypeFactory<'short', bigint>;
+export type ShortLiteral = ReturnType<Short>;
+export type UShort = ValueTypeFactory<'unsigned short', bigint>;
+export type UShortLiteral = ReturnType<UShort>;
+export type Int = ValueTypeFactory<'int', bigint>;
+export type IntLiteral = ReturnType<Int>;
+export type UInt = ValueTypeFactory<'unsigned int', bigint>;
+export type UIntLiteral = ReturnType<UInt>;
+export type Long = ValueTypeFactory<'long', bigint>;
+export type LongLiteral = ReturnType<Long>;
+export type ULong = ValueTypeFactory<'unsigned long', bigint>;
+export type ULongLiteral = ReturnType<ULong>;
+export type LongLong = ValueTypeFactory<'long long', bigint>;
+export type LongLongLiteral = ReturnType<LongLong>;
+export type ULongLong = ValueTypeFactory<'unsigned long long', bigint>;
+export type ULongLongLiteral = ReturnType<ULongLong>;
+export type Float = ValueTypeFactory<'float', number>;
+export type FloatLiteral = ReturnType<Float>;
+export type Double = ValueTypeFactory<'double', number>;
+export type DoubleLiteral = ReturnType<Double>;
+
+export const char: Char = createValueTypeFactory<'char', bigint>('char');
+export const uchar: UChar = createValueTypeFactory<'unsigned char', bigint>('unsigned char');
+export const short: Short = createValueTypeFactory<'short', bigint>('short');
+export const ushort: UShort = createValueTypeFactory<'unsigned short', bigint>('unsigned short');
+export const int: Int = createValueTypeFactory<'int', bigint>('int');
+export const uint: UInt = createValueTypeFactory<'unsigned int', bigint>('unsigned int');
+export const long: Long = createValueTypeFactory<'long', bigint>('long');
+export const ulong: ULong = createValueTypeFactory<'unsigned long', bigint>('unsigned long');
+export const longlong: LongLong = createValueTypeFactory<'long long', bigint>('long long');
+export const ulonglong: ULongLong = createValueTypeFactory<'unsigned long long', bigint>('unsigned long long');
+export const float: Float = createValueTypeFactory<'float', number>('float');
+export const double: Double = createValueTypeFactory<'double', number>('double');
+
+export type CNumber = Char | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong | ULongLong | Float | Double;
+export type CNumberLiteral = CharLiteral | UCharLiteral | ShortLiteral | UShortLiteral | IntLiteral | UIntLiteral | LongLiteral | ULongLiteral | LongLongLiteral | ULongLongLiteral | FloatLiteral | DoubleLiteral;
+
+export interface Pointer<T extends Type = Type> extends ValueType<'pointer', T> {};
+export function pointer<T extends Type>(value: T): Pointer<T> {
+    return addToString({type: 'pointer', value});
+}
+
+export interface CArray extends BaseType<'array'> {
+    length: number | null;
+    elts: Type;
+}
+export function cArray(elts: Type, length?: number | null): CArray {
+    return addToString({type: 'array', elts, length: length ?? null});
+}
+
+export interface CFunction extends BaseType<'function'> {
+    name: string;
+    params: [string, Type][];
+    varargs: boolean;
+    returnType: Type;
+}
+export function cFunction(name: string, params: [string, Type][], varargs: boolean, returnType: Type): CFunction {
+    return addToString({type: 'function', name, params, varargs, returnType})
+}
+
+export type CType = CNumber | CNumberLiteral | Pointer | CArray | CFunction;
+
+export type Type = JSType | CType;
 
 
 // https://stackoverflow.com/questions/50374908/transform-union-type-to-intersection-type
@@ -366,6 +359,19 @@ export function toString(type: Type, colors: boolean | HighlightColors = false):
         return type.types.map(type => toString(type)).join(' | ');
     } else if (type.type === 'intersection') {
         return type.types.map(type => toString(type)).join(' & ');
+    } else if (type.type === 'array') {
+        return toString(type.elts) + '[' + (type.length ?? '') + ']';
+    } else if (type.type === 'function') {
+        let out = toString(type.returnType) + ' ' + type.name + '(';
+        if (type.params.length === 0) {
+            out += type.varargs ? 'void' : '...';
+        } else {
+            out += type.params.map(([name, type]) => toString(type) + ' ' + name).join(', ');
+            if (type.varargs) {
+                out += ', ...';
+            }
+        }
+        return out + ')';
     } else if (!('value' in type || 'props' in type)) {
         if ('unique' in type && type.unique) {
             return 'unique symbol';
@@ -411,7 +417,7 @@ export function toString(type: Type, colors: boolean | HighlightColors = false):
         }
         out += '}';
         return out;
-    } else if (type.type === 'boolean' || type.type === 'number') {
+    } else if (type.type === 'boolean' || type.type === 'number' || type.type === 'char' || type.type === 'unsigned char' || type.type === 'short' || type.type === 'unsigned short' || type.type === 'int' || type.type === 'unsigned int' || type.type === 'long' || type.type === 'unsigned long' || type.type === 'long long' || type.type === 'unsigned long long') {
         return type.value.toString();
     } else if (type.type === 'string') {
         let out = '';
@@ -430,6 +436,8 @@ export function toString(type: Type, colors: boolean | HighlightColors = false):
         return '"' + out + '"';
     } else if (type.type === 'bigint') {
         return type.value + 'n';
+    } else if (type.type === 'pointer') {
+        return type.value + '*';
     } else {
         throw new Error('invalid type');
     }
@@ -450,163 +458,4 @@ export function resolveObjectIntersection(...objects: ObjectType[]): ObjectType 
         }
     }
     return out;
-}
-
-
-function parseFunction(params: b.FunctionDeclaration['params'], returnType: b.FunctionDeclaration['returnType'], construct: boolean = false, obj?: ObjectType): ObjectType {
-    let outParams: Parameter[] = [];
-    let restParam: Parameter | null = null;
-    for (let param of params) {
-        CompilerError.setSrcFromNode(param);
-        if (param.type === 'RestElement') {
-            restParam = [CompilerError.getRaw(param.argument), parse(param.typeAnnotation)];
-        } else {
-            outParams.push([CompilerError.getRaw(param), parse(param.typeAnnotation)]);
-        }
-    }
-    if (!obj) {
-        if (construct) {
-            return constructor(outParams, parse(returnType), restParam);
-        } else {
-            return function_(outParams, parse(returnType), restParam);
-        }
-    } else {
-        let out = {
-            params: outParams,
-            restParam,
-            returnType: parse(returnType),
-        };
-        if (construct) {
-            obj.construct = out;
-        } else {
-            obj.call = out;
-        }
-        return obj;
-    }
-}
-
-
-export function parse(node: b.TSType | b.TSTypeAnnotation | b.TypeAnnotation | undefined | null | b.Noop, thisType?: Type): Type {
-    if (!node || node.type === 'Noop') {
-        return any;
-    }
-    CompilerError.setSrcFromNode(node);
-    switch (node.type) {
-        case 'TSTypeAnnotation':
-            return parse(node.typeAnnotation, thisType);
-        case 'TSParenthesizedType':
-            return parse(node.typeAnnotation, thisType);
-        case 'TSIntrinsicKeyword':
-            throw new TypeError('The intrinsic keyword is not supported');
-        case 'TSAnyKeyword':
-            return any;
-        case 'TSUnknownKeyword':
-            return unknown;
-        case 'TSNeverKeyword':
-            return never;
-        case 'TSVoidKeyword':
-            return void_;
-        case 'TSUndefinedKeyword':
-            return undefined_;
-        case 'TSNullKeyword':
-            return null_;
-        case 'TSBooleanKeyword':
-            return boolean;
-        case 'TSNumberKeyword':
-            return number;
-        case 'TSStringKeyword':
-            return string;
-        case 'TSSymbolKeyword':
-            return symbol;
-        case 'TSBigIntKeyword':
-            return bigint;
-        case 'TSObjectKeyword':
-            return object;
-        case 'TSThisType':
-            return thisType ?? undefined_;
-        case 'TSLiteralType':
-            let x = node.literal;
-            CompilerError.setSrcFromNode(x);
-            switch (x.type) {
-                case 'BooleanLiteral':
-                    return boolean(x.value);
-                case 'NumericLiteral':
-                    return number(x.value);
-                case 'StringLiteral':
-                    return string(x.value);
-                case 'BigIntLiteral':
-                    return bigint(BigInt(x.value));
-                default:
-                    throw new TypeError(`Bad/unrecongnized AST literal type subnode passed to t.parse() of type ${node.type}`);
-            }
-        case 'TSArrayType':
-            return array(parse(node.elementType));
-        case 'TSTupleType':
-            return array(node.elementTypes.map(x => parse(x.type === 'TSNamedTupleMember' ? x.elementType : x, thisType)));
-        case 'TSTypeLiteral':
-            let out = object({});
-            for (let prop of node.members) {
-                CompilerError.setSrcFromNode(prop);
-                if (prop.type === 'TSPropertySignature') {
-                    if (prop.key.type !== 'Identifier') {
-                        throw new CompilerError('SyntaxError', 'Type literal keys must not be computed');
-                    }
-                    out.props[prop.key.name] = parse(prop.typeAnnotation, thisType);
-                } else if (prop.type === 'TSMethodSignature') {
-                    if (prop.key.type !== 'Identifier') {
-                        throw new CompilerError('SyntaxError', 'Type literal keys must not be computed');
-                    }
-                    if (prop.kind === 'get') {
-                        out.props[prop.key.name] = parse(prop.typeAnnotation, thisType);
-                    } else if (prop.kind === 'method') {
-                        out.props[prop.key.name] = parseFunction(prop.parameters, prop.typeAnnotation);
-                    }
-                } else if (prop.type === 'TSCallSignatureDeclaration') {
-                    parseFunction(prop.parameters, prop.typeAnnotation, false, out);
-                } else if (prop.type === 'TSConstructSignatureDeclaration') {
-                    parseFunction(prop.parameters, prop.typeAnnotation, true, out);
-                } else {
-                    let type = parse(prop.typeAnnotation);
-                    for (let param of prop.parameters) {
-                        out.indexes.push([param.name, parse(param.typeAnnotation, thisType), type]);
-                    }
-                }
-            }
-            return out;
-        case 'TSFunctionType':
-            return parseFunction(node.parameters, node.typeAnnotation);
-        case 'TSConstructorType':
-            return parseFunction(node.parameters, node.typeAnnotation, true);
-        case 'TSUnionType':
-            return union(...node.types.map(x => parse(x, thisType)));
-        case 'TSIntersectionType':
-            return intersection(...node.types.map(x => parse(x, thisType)));
-        case 'TSConditionalType':
-            throw new TypeError('Conditional types are not supported');
-        case 'TSIndexedAccessType':
-            let obj = parse(node.objectType, thisType);
-            if (obj.type !== 'object') {
-                throw new CompilerError('TypeError', `Indexed access types must be used with an object type`);
-            }
-            let prop = parse(node.indexType);
-            if ((prop.type === 'string' || prop.type === 'number') && 'value' in prop) {
-                return obj.props[prop.value];
-            } else {
-                for (let [_, type, result] of obj.indexes) {
-                    if (matches(prop, type)) {
-                        return result;
-                    }
-                }
-                throw new CompilerError('TypeError', `Invalid type for indexed access type: ${prop}`);
-            }
-        case 'TSMappedType':
-            return t.object({}, null, [[node.typeParameter.name, parse(node.typeParameter.constraint), parse(node.typeAnnotation)]]);
-        case 'TSImportType':
-            throw new CompilerError('TypeError', 'Import types are not supported');
-        case 'TSTemplateLiteralType':
-            throw new CompilerError('TypeError', 'Template literal types are not supported');
-        default:
-            // @ts-ignore
-            throw new TypeError(`Bad/unrecongnized AST node passed to t.parse() of type ${node.type}`);
-    }
 }

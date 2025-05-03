@@ -1,5 +1,4 @@
 
-import type {Node} from '@babel/types';
 import {highlight} from './highlighter';
 
 
@@ -10,33 +9,8 @@ export interface SourceData {
     col: number;
 }
 
+
 export class CompilerError extends Error implements SourceData {
-
-    static src: SourceData = {
-        raw: '',
-        file: '',
-        line: 0,
-        col: 0,   
-    };
-
-    static code: string = '';
-
-    static getRaw(node: Node): string {
-        if (!node.loc) {
-            throw new Error('Node.loc is missing');
-        }
-        return CompilerError.code.slice(node.loc.start.index, node.loc.end.index);
-    }
-
-    static setSrcFromNode(node: Node): void {
-        if (!node.loc) {
-            throw new Error('Node.loc is missing');
-        }
-        this.src.raw = this.getRaw(node);
-        this.src.file = node.loc.filename;
-        this.src.line = node.loc.start.line;
-        this.src.col = node.loc.start.column;
-    }
 
     [Symbol.toStringTag] = 'CompilerError' as const;
 
@@ -48,10 +22,9 @@ export class CompilerError extends Error implements SourceData {
     line: number;
     col: number;
 
-    constructor(type: string, message: string, src?: SourceData) {
+    constructor(type: string, message: string, src: SourceData) {
         super(message);
         this.type = type;
-        src ??= CompilerError.src;
         this.raw = src.raw;
         this.rawLine = src.raw.split('\n')[0];
         this.file = src.file;

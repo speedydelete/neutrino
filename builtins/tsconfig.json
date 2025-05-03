@@ -1,8 +1,0 @@
-{
-    "compilerOptions": {
-        "strict": true,
-        "noLib": true,
-        "types": []
-    },
-    "files": ["index.ts", "test.ts"]
-}
