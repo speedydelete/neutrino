@@ -5,7 +5,7 @@ import {Type} from './types';
 import * as a from './ast';
 
 
-class Converter extends a.NodeGenerator {
+export class Converter extends a.NodeGenerator {
 
     raw: string | null = null;
 
@@ -295,7 +295,9 @@ class Converter extends a.NodeGenerator {
             if (!node.id) {
                 throw new Error('Invalid AST');
             }
-            return this.createFunctionDeclaration(this.createIdentifier(node.id.name), ...this.function(node));
+            let out = this.createFunctionDeclaration(this.createIdentifier(node.id.name, t.unknown), ...this.function(node));
+            this.setVar(node.id.name, a.getFunctionType(out));
+            return out;
         } else if (node.type === 'VariableDeclaration') {
             if (node.kind === 'using' || node.kind === 'await using') {
                 this.error('SyntaxError', 'Using declarations are not supported');

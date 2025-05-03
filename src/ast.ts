@@ -361,9 +361,12 @@ export type Statement = EmptyStatement | BlockStatement | LabeledStatement | Lab
 export type Node = Program | Expression | LValue | Statement | ObjectProperty | ObjectMethod | ObjectPatternProperty | VariableDeclarator | SwitchCase;
 
 
-function addFunctionType<T extends Function>(node: T): T & {resultType: Type} {
-    let type = t.object({prototype: t.object({})}, {params: node.params.map(([name, type]) => [name.type === 'Identifier' ? name.name : '__destructured__', type]), restParam: node.restParam ? [node.restParam[0].type === 'Identifier' ? node.restParam[0].name : '__destructured__', node.restParam[1]] : null, returnType: node.returnType});
-    return Object.assign(node, {resultType: type});
+export function getFunctionType(node: Function): Type {
+    return t.object({prototype: t.object({})}, {params: node.params.map(([name, type]) => [name.type === 'Identifier' ? name.name : '__destructured__', type]), restParam: node.restParam ? [node.restParam[0].type === 'Identifier' ? node.restParam[0].name : '__destructured__', node.restParam[1]] : null, returnType: node.returnType});
+}
+
+export function addFunctionType<T extends Function>(node: T): T & {resultType: Type} {
+    return Object.assign(node, {resultType: getFunctionType(node)});
 }
 
 
@@ -469,8 +472,8 @@ export class NodeGenerator {
         return this._create('Program', {body, scope: this.scope});
     }
 
-    createIdentifier(name: string, type: boolean = false): Identifier {
-        let resultType = type ? this.getTypeVar(name) : this.getVar(name);
+    createIdentifier(name: string, type: boolean | Type = false): Identifier {
+        let resultType = typeof type === 'boolean' ? (type ? this.getTypeVar(name) : this.getVar(name)) : type;
         return this._create('Identifier', {name: name, resultType});
     }
 

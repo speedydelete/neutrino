@@ -5,7 +5,7 @@ fi
 node --enable-source-maps -e '
 try {
     const fs = require("fs");
-    fs.writeFileSync(".temp.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), {filename: "'$1'", typescript: true, jsx: true}));
+    fs.writeFileSync("main.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), "c", true));
 } catch (error) {
     if ("toStringColors" in error) {
         console.error(error.toStringColors());
@@ -16,4 +16,4 @@ try {
         console.error(error.stack);
     }
     process.exit(1);
-}' && gcc -Wall -Werror -Wpedantic -Ibuiltins .temp.c && ./a.out
+}' && make

@@ -209,7 +209,7 @@ export class Generator extends a.NodeGenerator {
             } else if (this.lang === 'ts' && node.type === 'AsExpression') {
                 return this.expression(node.value) + ' as ' + this.type(node.newType);
             } else {
-                this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
             }
         } else {
             if (node.type === 'NullLiteral') {
@@ -228,7 +228,7 @@ export class Generator extends a.NodeGenerator {
                         if (!elt) {
                             return 'NULL';
                         } else if (elt.type === 'SpreadElement') {
-                            this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                            this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
                         } else {
                             return this.expression(elt);
                         }
@@ -240,7 +240,7 @@ export class Generator extends a.NodeGenerator {
                 } else {
                     return 'create_object(' + node.props.length + ',\xa0' + node.props.map(prop => {
                         if (prop.type !== 'ObjectProperty') {
-                            this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                            this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
                         }
                         return this.expression(prop.key) + ',\xa0' + this.expression(prop.value);
                     }).join(',\xa0') + ')';
@@ -292,7 +292,7 @@ export class Generator extends a.NodeGenerator {
                     return BINARY_OP_FUNCS[node.op];
                 }
             } else {
-                this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
             }
         }
     }
@@ -341,7 +341,7 @@ export class Generator extends a.NodeGenerator {
             if (node.type === 'Identifier') {
                 return 'jv_' + node;
             } else {
-                this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
             }
         } else if (node.type === 'Identifier') {
             return node.name;
@@ -436,7 +436,7 @@ export class Generator extends a.NodeGenerator {
                 }
                 return out + '\xa0' + this.functionBody(node);
             } else {
-                this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
             }
         } else {
             if (node.type === 'LabelStatement') {
@@ -456,7 +456,7 @@ export class Generator extends a.NodeGenerator {
             } else if (node.type === 'WithStatement') {
                 return 'with\xa0(' + this.expression(node.object) + ')\xa0' + this.statement(node.body);
             } else {
-                this.error('IncompatibleLanguageError', `Node of type ${node.type} are not compatible with ${LANGS[this.lang]}`);
+                this.error('IncompatibleLanguageError', `Node of type ${node.type} is not compatible with ${LANGS[this.lang]}`);
             }
         }
     }
@@ -473,4 +473,9 @@ export class Generator extends a.NodeGenerator {
         return out;
     }
 
+}
+
+
+export function generate(ast: a.Program, lang: Language = 'js', pretty: boolean = false): string {
+    return (new Generator(lang, pretty)).program(ast);
 }
