@@ -1,8 +1,7 @@
 
-import * as b from '@babel/types';
+import type * as b from '@babel/types';
 import {CompilerError} from './errors';
 import {highlight, HighlightColors} from './highlighter';
-import {t} from '.';
 
 
 export class Scope {
@@ -70,9 +69,13 @@ export class Scope {
         return false;
     }
 
-    setLValue(node: b.LVal, type?: Type): void {
+    setLValue(node: b.LVal, const_: boolean, parseType: (type: b.Identifier['typeAnnotation']) => Type, type?: Type): void {
         if (node.type === 'Identifier') {
-            this.set(node.name, type ?? parse(node.typeAnnotation));
+            type ??= parseType(node.typeAnnotation);
+            if (!const_) {
+                type = generalizeLiteral(type);
+            }
+            this.set(node.name, type);
         }
     }
 
@@ -148,12 +151,12 @@ interface ObjectType extends BaseType<'object'> {
     indexes: [string, Type, Type][];
 };
 
-export type ObjectTypeKeyword = BaseType<'object'> & ((props?: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes?: [string, Type, Type][], construct?: ObjectCallData | null) => ObjectType) & {props: {[key: PropertyKey]: Type}, call: null, indexes: []};
+export type ObjectTypeKeyword = BaseType<'object'> & ((props?: {[key: PropertyKey]: Type}, call?: ObjectCallData | null, indexes?: [string, Type, Type][], construct?: ObjectCallData | null) => ObjectType) & {props: {[key: PropertyKey]: Type}, call: null, indexes: [], construct: null};
 
 // @ts-ignore
 export const object: ObjectTypeKeyword = addToString(Object.assign(function(props: {[key: PropertyKey]: Type} = {}, call: ObjectCallData | null = null, indexes: [string, Type, Type][] = [], construct: ObjectCallData | null = null): ObjectType {
     return {type: 'object', props, call, indexes, construct};
-}, {type: 'object' as const, props: {} as const, call: null, indexes: [] as const}));
+}, {type: 'object' as const, props: {} as const, call: null, indexes: [] as const, construct: null}));
 
 
 interface ArrayType extends ObjectType {
@@ -452,161 +455,75 @@ export function resolveObjectIntersection(...objects: ObjectType[]): ObjectType 
     return out;
 }
 
-
-function parseFunction(params: b.FunctionDeclaration['params'], returnType: b.FunctionDeclaration['returnType'], construct: boolean = false, obj?: ObjectType): ObjectType {
-    let outParams: Parameter[] = [];
-    let restParam: Parameter | null = null;
-    for (let param of params) {
-        CompilerError.setSrcFromNode(param);
-        if (param.type === 'RestElement') {
-            restParam = [CompilerError.getRaw(param.argument), parse(param.typeAnnotation)];
+export function generalizeLiteral(type: Type): Type {
+    if ('value' in type) {
+        if (type.type === 'boolean') {
+            return boolean;
+        } else if (type.type === 'number') {
+            return number;
+        } else if (type.type === 'string') {
+            return string;
         } else {
-            outParams.push([CompilerError.getRaw(param), parse(param.typeAnnotation)]);
+            return bigint;
         }
-    }
-    if (!obj) {
-        if (construct) {
-            return constructor(outParams, parse(returnType), restParam);
+    } else if (type.type === 'object' && 'isArray' in type) {
+        if (type.elts instanceof Array) {
+            return array(union(...type.elts));
         } else {
-            return function_(outParams, parse(returnType), restParam);
+            return type;
         }
     } else {
-        let out = {
-            params: outParams,
-            restParam,
-            returnType: parse(returnType),
-        };
-        if (construct) {
-            obj.construct = out;
-        } else {
-            obj.call = out;
-        }
-        return obj;
+        return type;
     }
 }
 
-
-export function parse(node: b.TSType | b.TSTypeAnnotation | b.TypeAnnotation | undefined | null | b.Noop, thisType?: Type): Type {
-    if (!node || node.type === 'Noop') {
-        return any;
+export function isTruthy(type: Type): boolean | 'maybe' {
+    if ('value' in type) {
+        return Boolean(type.value);
     }
-    CompilerError.setSrcFromNode(node);
-    switch (node.type) {
-        case 'TSTypeAnnotation':
-            return parse(node.typeAnnotation, thisType);
-        case 'TSParenthesizedType':
-            return parse(node.typeAnnotation, thisType);
-        case 'TSIntrinsicKeyword':
-            throw new TypeError('The intrinsic keyword is not supported');
-        case 'TSAnyKeyword':
-            return any;
-        case 'TSUnknownKeyword':
-            return unknown;
-        case 'TSNeverKeyword':
-            return never;
-        case 'TSVoidKeyword':
-            return void_;
-        case 'TSUndefinedKeyword':
-            return undefined_;
-        case 'TSNullKeyword':
-            return null_;
-        case 'TSBooleanKeyword':
-            return boolean;
-        case 'TSNumberKeyword':
-            return number;
-        case 'TSStringKeyword':
-            return string;
-        case 'TSSymbolKeyword':
-            return symbol;
-        case 'TSBigIntKeyword':
-            return bigint;
-        case 'TSObjectKeyword':
-            return object;
-        case 'TSThisType':
-            return thisType ?? undefined_;
-        case 'TSLiteralType':
-            let x = node.literal;
-            CompilerError.setSrcFromNode(x);
-            switch (x.type) {
-                case 'BooleanLiteral':
-                    return boolean(x.value);
-                case 'NumericLiteral':
-                    return number(x.value);
-                case 'StringLiteral':
-                    return string(x.value);
-                case 'BigIntLiteral':
-                    return bigint(BigInt(x.value));
-                default:
-                    throw new TypeError(`Bad/unrecongnized AST literal type subnode passed to t.parse() of type ${node.type}`);
-            }
-        case 'TSArrayType':
-            return array(parse(node.elementType));
-        case 'TSTupleType':
-            return array(node.elementTypes.map(x => parse(x.type === 'TSNamedTupleMember' ? x.elementType : x, thisType)));
-        case 'TSTypeLiteral':
-            let out = object({});
-            for (let prop of node.members) {
-                CompilerError.setSrcFromNode(prop);
-                if (prop.type === 'TSPropertySignature') {
-                    if (prop.key.type !== 'Identifier') {
-                        throw new CompilerError('SyntaxError', 'Type literal keys must not be computed');
-                    }
-                    out.props[prop.key.name] = parse(prop.typeAnnotation, thisType);
-                } else if (prop.type === 'TSMethodSignature') {
-                    if (prop.key.type !== 'Identifier') {
-                        throw new CompilerError('SyntaxError', 'Type literal keys must not be computed');
-                    }
-                    if (prop.kind === 'get') {
-                        out.props[prop.key.name] = parse(prop.typeAnnotation, thisType);
-                    } else if (prop.kind === 'method') {
-                        out.props[prop.key.name] = parseFunction(prop.parameters, prop.typeAnnotation);
-                    }
-                } else if (prop.type === 'TSCallSignatureDeclaration') {
-                    parseFunction(prop.parameters, prop.typeAnnotation, false, out);
-                } else if (prop.type === 'TSConstructSignatureDeclaration') {
-                    parseFunction(prop.parameters, prop.typeAnnotation, true, out);
-                } else {
-                    let type = parse(prop.typeAnnotation);
-                    for (let param of prop.parameters) {
-                        out.indexes.push([param.name, parse(param.typeAnnotation, thisType), type]);
-                    }
-                }
+    switch (type.type) {
+        case 'undefined':
+        case 'null':
+        case 'void':
+            return false;
+        case 'symbol':
+        case 'object':
+        case 'intersection':
+            return true;
+        case 'union':
+            let out: boolean | 'maybe' = 'maybe';
+            for (let x of type.types) {
+                let y = isTruthy(x);
+                out = out === 'maybe' || y === 'maybe' ? 'maybe' : out || y;
             }
             return out;
-        case 'TSFunctionType':
-            return parseFunction(node.parameters, node.typeAnnotation);
-        case 'TSConstructorType':
-            return parseFunction(node.parameters, node.typeAnnotation, true);
-        case 'TSUnionType':
-            return union(...node.types.map(x => parse(x, thisType)));
-        case 'TSIntersectionType':
-            return intersection(...node.types.map(x => parse(x, thisType)));
-        case 'TSConditionalType':
-            throw new TypeError('Conditional types are not supported');
-        case 'TSIndexedAccessType':
-            let obj = parse(node.objectType, thisType);
-            if (obj.type !== 'object') {
-                throw new CompilerError('TypeError', `Indexed access types must be used with an object type`);
-            }
-            let prop = parse(node.indexType);
-            if ((prop.type === 'string' || prop.type === 'number') && 'value' in prop) {
-                return obj.props[prop.value];
-            } else {
-                for (let [_, type, result] of obj.indexes) {
-                    if (matches(prop, type)) {
-                        return result;
-                    }
-                }
-                throw new CompilerError('TypeError', `Invalid type for indexed access type: ${prop}`);
-            }
-        case 'TSMappedType':
-            return t.object({}, null, [[node.typeParameter.name, parse(node.typeParameter.constraint), parse(node.typeAnnotation)]]);
-        case 'TSImportType':
-            throw new CompilerError('TypeError', 'Import types are not supported');
-        case 'TSTemplateLiteralType':
-            throw new CompilerError('TypeError', 'Template literal types are not supported');
         default:
-            // @ts-ignore
-            throw new TypeError(`Bad/unrecongnized AST node passed to t.parse() of type ${node.type}`);
+            return 'maybe';
+    }
+}
+
+export function isNullish(type: Type): boolean | 'maybe' {
+    switch (type.type) {
+        case 'undefined':
+        case 'null':
+        case 'void':
+            return true;
+        case 'boolean':
+        case 'number':
+        case 'string':
+        case 'symbol':
+        case 'bigint':
+        case 'object':
+        case 'intersection':
+            return false;
+        case 'union':
+            let out: boolean | 'maybe' = 'maybe';
+            for (let x of type.types) {
+                let y = isNullish(x);
+                out = out === 'maybe' || y === 'maybe' ? 'maybe' : out || y;
+            }
+            return out;
+        default:
+            return 'maybe';
     }
 }
