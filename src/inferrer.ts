@@ -18,7 +18,11 @@ export class Inferrer extends ASTManipulator {
     }
 
     popThisType(): void {
-        this.thisType = this.thisTypes.pop();
+        let newType = this.thisTypes.pop();
+        if (!newType) {
+            this.error('InternalError', 'Attempting to pop thisType stack with no previous thisType');
+        }
+        this.thisType = newType;
     }
 
     function(params: (b.Identifier | b.RestElement | b.Pattern | b.TSParameterProperty)[], returnType: b.FunctionDeclaration['returnType'], construct: boolean = false, obj?: t.Object): t.Object {
@@ -250,6 +254,9 @@ export class Inferrer extends ASTManipulator {
                 type = this.toObjectType(type);
                 for (let i = 0; i < node.elements.length; i++) {
                     let elt = node.elements[i];
+                    if (!elt) {
+                        continue;
+                    }
                     if (type.type === 'any') {
                         if (elt.type === 'RestElement') {
                             this.setLValue(elt.argument, const_, t.any);
@@ -270,6 +277,9 @@ export class Inferrer extends ASTManipulator {
                 }
             } else {
                 for (let elt of node.elements) {
+                    if (!elt) {
+                        continue;
+                    }
                     if (elt.type === 'RestElement') {
                         this.setLValue(elt.argument, const_);
                     } else {
@@ -524,7 +534,7 @@ export class Inferrer extends ASTManipulator {
                 }
             case 'MemberExpression':
             case 'OptionalMemberExpression':
-                return this.getProp(this.expression(node.object), this.expression(node.property), node.optional);
+                return this.getProp(this.expression(node.object), this.expression(node.property), node.optional ?? false);
             case 'BindExpression':
                 return this.expression(node.callee);
             case 'ConditionalExpression':
@@ -540,9 +550,9 @@ export class Inferrer extends ASTManipulator {
                 }
             case 'CallExpression':
             case 'OptionalCallExpression':
-                return this.call(this.expression(node.callee), node.optional);
+                return this.call(this.expression(node.callee), node.optional ?? false);
             case 'NewExpression':
-                return this.construct(this.expression(node.callee), node.optional);
+                return this.construct(this.expression(node.callee), node.optional ?? false);
             case 'SequenceExpression':
                 return this.expression(node.expressions[node.expressions.length - 1]);
             case 'ParenthesizedExpression':
@@ -582,7 +592,7 @@ export class Inferrer extends ASTManipulator {
         }
     }
 
-    importAttributes(attrs: b.ImportAttribute[] | undefined): t.Object | undefined {
+    importAttributes(attrs: b.ImportAttribute[] | null | undefined): t.Object | undefined {
         if (!attrs) {
             return undefined;
         } else {
@@ -629,7 +639,7 @@ export class Inferrer extends ASTManipulator {
             if (node.declaration) {
                 this.statement(node.declaration, true);
             }
-            if (node.source === null) {
+            if (!node.source) {
                 for (let spec of node.specifiers) {
                     if (spec.type === 'ExportSpecifier') {
                         this.scope.export(spec.local.name, spec.exported.type === 'Identifier' ? spec.exported.name : spec.exported.value);

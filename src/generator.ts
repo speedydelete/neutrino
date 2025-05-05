@@ -103,7 +103,7 @@ export class Generator extends ASTManipulator {
     }
 
     getDeclarations(): string {
-        let out = [];
+        let out: string[] = [];
         for (let [key, type] of this.scope.vars) {
             out.push(this.type(type, key));
         }
@@ -113,6 +113,9 @@ export class Generator extends ASTManipulator {
     function(node: b.Function): string {
         let name = 'id' in node && node.id ? 'js_function_' + this.id + '_' + node.id.name : 'js_anon_' + Generator.nextAnon++;
         let type = this.infer.function(node.params, node.returnType).call;
+        if (!type) {
+            this.error('InternalError', 'Not a function');
+        }
         let out = this.type(type.returnType) + ' ' + name + '(' + node.params.map((param, index) => {
             if (param.type !== 'Identifier') {
                 this.error('InternalError', `Complicated lvalue encountered in Generator.function() of type ${node.type}`)
@@ -186,6 +189,9 @@ export class Generator extends ASTManipulator {
                     return 'create_array(0)';
                 } else {
                     return 'create_array_with_items(' + node.elements.length + ', ' + node.elements.map(elt => {
+                        if (!elt) {
+                            return 'NULL';
+                        }
                         if (elt.type === 'SpreadElement') {
                             this.error('SyntaxError', 'Spread elements are not supported');
                         } else {
@@ -222,6 +228,9 @@ export class Generator extends ASTManipulator {
                 return (node.prefix ? '' : 'postfix_' + (node.operator === '++' ? 'inc' : 'dec')) + '(' + this.expression(node.argument) + ')';
             case 'BinaryExpression':
             case 'LogicalExpression':
+                if (node.operator === '|>') {
+                    this.error('SyntaxError', 'The pipeline operator is not supported');
+                }
                 return BINARY_OP_FUNCS[node.operator] + '(' + this.expression(node.left) + ', ' + this.expression(node.right) + ')';
             case 'AssignmentExpression':
                 return this.assignment(node.left, this.expression(node.right));
@@ -293,9 +302,9 @@ export class Generator extends ASTManipulator {
                 this.error('SyntaxError', 'The with statement is not supported');
             case 'ReturnStatement':
                 if (node.argument) {
-                    return 'return;\n';
-                } else {
                     return 'return ' + this.expression(node.argument) + ';\n';
+                } else {
+                    return 'return;\n';
                 }
             case 'LabeledStatement':
                 return node.label.name + ': ' + this.statement(node.body);

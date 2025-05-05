@@ -7,8 +7,8 @@ try {
     const fs = require("fs");
     fs.writeFileSync("main.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), "c", true));
 } catch (error) {
-    if ("toStringColors" in error) {
-        console.error(error.toStringColors());
+    if ("toStringHighlighted" in error) {
+        console.error(error.toStringHighlighted());
     } else {
         console.error(error);
     }

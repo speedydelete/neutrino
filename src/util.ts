@@ -274,6 +274,7 @@ export class ASTManipulator {
                 }
             }
         }
+        return t.object(props);
     }
 
     toObjectType(type: Type, optional?: false): t.Object | t.Any;
@@ -321,7 +322,7 @@ export class ASTManipulator {
         }
     }
 
-    call(obj: t.Type, optional?: boolean): Type {
+    call(obj: t.Type, optional: boolean = false): Type {
         obj = this.toObjectType(obj, optional);
         if (obj.type !== 'object') {
             return obj;
@@ -332,7 +333,7 @@ export class ASTManipulator {
         }
     }
 
-    construct(obj: t.Type, optional?: boolean): Type {
+    construct(obj: t.Type, optional: boolean = false): Type {
         obj = this.toObjectType(obj, optional);
         if (obj.type !== 'object') {
             return t.any;
