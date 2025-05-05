@@ -68,7 +68,7 @@ any* create_any_from_array(array* value);
 
 static inline any* create_any_from_any(any* x) {return x;}
 
-#define create_any(value) _Generic((value), \
+#define create_any(value) (_Generic((value), \
     void*: create_any_from_undefined, \
     void**: create_any_from_null, \
     bool: create_any_from_boolean, \
@@ -78,7 +78,7 @@ static inline any* create_any_from_any(any* x) {return x;}
     object*: create_any_from_object, \
     array*: create_any_from_array, \
     any*: create_any_from_any \
-)(value)
+)(value))
 
 
 char* js_typeof_any(any* value);

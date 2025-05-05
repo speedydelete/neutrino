@@ -170,11 +170,6 @@ export class ASTManipulator {
         this.fullPath = fullPath;
         this.raw = raw;
         this.scope = scope ?? new Scope(this.sourceData);
-        for (let key in this) {
-            if (typeof this[key] === 'function') {
-                this[key] = this[key].bind(this);
-            }
-        }
     }
 
     newConnectedSubclass<T extends typeof ASTManipulator>(subclass: T): InstanceType<T> {

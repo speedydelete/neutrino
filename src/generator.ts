@@ -70,7 +70,7 @@ export class Generator extends ASTManipulator {
     infer: Inferrer;
     importIncludes: string[] = [];
     functions: string[] = [];
-    main: string = '';
+    topLevel: string = '';
     id: number;
 
     constructor(fullPath: string, raw: string, scope?: Scope) {
@@ -88,11 +88,11 @@ export class Generator extends ASTManipulator {
         return '"' + value.replaceAll('"', '\\"').replaceAll('\n', '\\n') + '"';
     }
 
-    type(type: Type, name?: string): string {
+    type(type: Type, name?: string, decl: boolean = false): string {
         if (type.type === 'bigint') {
             this.error('TypeError', 'BigInts are not supported');
         } else if (type.type === 'object' && type.call) {
-            return this.type(type.call.returnType) + ' (*' + (name ?? '') + ')(object* this, ' + type.call.params.map(param => this.type(param[1], param[0])).join(', ') + ')';
+            return this.type(type.call.returnType) + ' ' + (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(object* this, ' + type.call.params.map(param => this.type(param[1], param[0])).join(', ') + ')';
         } else {
             let out = TYPES[type.type];
             if (name) {
@@ -102,10 +102,18 @@ export class Generator extends ASTManipulator {
         }
     }
 
+    identifier(name: string, isFunction: boolean = false): string {
+        if (this.scope.getRoot().has(name) && !this.scope.isShadowed(name)) {
+            return 'js_global' + (isFunction ? 'function' : '') + '_' + name;
+        } else {
+            return 'js_' + (isFunction ? 'function' : 'variable') + '_' + this.id + '_' + name;
+        }
+    }
+
     getDeclarations(): string {
         let out: string[] = [];
         for (let [key, type] of this.scope.vars) {
-            out.push(this.type(type, key));
+            out.push(this.type(type, this.identifier(key, Boolean(type.type === 'object' && type.call)), true) + ';\n');
         }
         return out.join(';\n');
     }
@@ -116,13 +124,13 @@ export class Generator extends ASTManipulator {
         if (!type) {
             this.error('InternalError', 'Not a function');
         }
-        let out = this.type(type.returnType) + ' ' + name + '(' + node.params.map((param, index) => {
+        let out = this.type(type.returnType) + ' ' + name + '(object* this' + (node.params.length > 0 ? ', ' + node.params.map((param, index) => {
             if (param.type !== 'Identifier') {
                 this.error('InternalError', `Complicated lvalue encountered in Generator.function() of type ${node.type}`)
             } else {
                 return this.type(type.params[index][1], 'js_variable_' + this.id + '_' + param.name);
             }
-        }).join(', ') + ') {';
+        }).join(', ') : '') + ') ';
         this.pushScope();
         for (let [name, paramType] of type.params) {
             this.scope.set(name, paramType);
@@ -132,8 +140,12 @@ export class Generator extends ASTManipulator {
         } else {
             out += '{\n    return ' + this.expression(node.body) + ';\n}';
         }
+        if ('id' in node && node.id) {
+            this.topLevel += 'js_variable_' + this.id + '_' + node.id.name + ' = ' + 'create_object(NULL, 1, "prototype", create_object(0));\n';
+        }
         this.popScope();
-        return out;
+        this.functions.push(out);
+        return name;
     }
 
     assignment(node: b.LVal | b.OptionalMemberExpression, value: string): string {
@@ -152,14 +164,9 @@ export class Generator extends ASTManipulator {
     expression(node: b.Expression | b.PrivateName | b.V8IntrinsicIdentifier): string {
         this.setSourceData(node);
         let func: string;
-        let args: string;
         switch (node.type) {
             case 'Identifier':
-                if (this.scope.getRoot().has(node.name) && !this.scope.isShadowed(node.name)) {
-                    return 'js_global_' + node.name;
-                } else {
-                    return 'js_variable_' + this.id + '_' + node.name;
-                }
+                return this.identifier(node.name);
             case 'PrivateName':
                 this.error('SyntaxError', 'Private names are not supported');
             case 'RegExpLiteral':
@@ -171,7 +178,11 @@ export class Generator extends ASTManipulator {
             case 'BooleanLiteral':
                 return node.value ? 'true' : 'false';
             case 'NumericLiteral':
-                return node.value.toString(10);
+                let out = node.value.toString(10);
+                if (!out.includes('.')) {
+                    out += '.0';
+                }
+                return out;
             case 'BigIntLiteral':
                 this.error('SyntaxError', 'BigInts are not supported');
             case 'DecimalLiteral':
@@ -250,38 +261,51 @@ export class Generator extends ASTManipulator {
             case 'CallExpression':
             case 'OptionalCallExpression':
             case 'NewExpression':
-                args = node.arguments.map(arg => {
+                let args = node.arguments.map(arg => {
                     if (arg.type === 'SpreadElement') {
                         this.error('SyntaxError', 'Spread elements are not supported');
                     } else {
                         return this.expression(arg as b.Expression);
                     }
-                }).join(', ');
+                });
                 if (node.callee.type === 'Identifier') {
                     func = this.expression(node.callee);
-                    if (func.startsWith('js_module')) {
-                        func = 'js_function' + func.slice(9);
+                    if (func.startsWith('js_variable')) {
+                        func = 'js_function' + func.slice(11);
                     } else if (func.startsWith('js_global')) {
                         func = 'js_globalfunction' + func.slice(9);
                     }
                 } else {
                     func = this.expression(node.callee);
                 }
+                let type = this.infer.expression(node.callee);
+                if ('call' in type && typeof type.call !== 'function') {
+                    let call = type.call;
+                    if (call) {
+                        args = args.map((arg, i) => {
+                            if (this.type(call.params[i][1]) === 'any*') {
+                                return 'create_any(' + arg + ')';
+                            } else {
+                                return arg;
+                            }
+                        });
+                    }
+                }
                 if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
                     if (node.callee.type === 'MemberExpression') {
                         let macro = node.type === 'OptionalCallExpression' ? 'optional_call_method' : 'call_method';
-                        return macro + '(' + this.expression(node.callee.object) + ', ' + (node.callee.property.type === 'Identifier' ? this.string(node.callee.property.name) : this.expression(node.callee.property)) + ', ' + args + ')';
+                        return macro + '(' + this.expression(node.callee.object) + ', ' + (node.callee.property.type === 'Identifier' ? this.string(node.callee.property.name) : this.expression(node.callee.property)) + ', ' + args.join(', ') + ')';
                     } else if (node.type === 'OptionalCallExpression') {
-                        return 'optional_call(' + func + ', NULL, ' + args + ')';
+                        return 'optional_call(' + func + ', NULL, ' + args.join(', ') + ')';
                     } else {
-                        return func + '(NULL, ' + args + ')';
+                        return func + '(NULL, ' + args.join(', ') + ')';
                     }
                 } else {
                     let proto = node.callee.type === 'Identifier' ? 'js_variable_' + this.id + '_' + node.callee.name : this.expression(node.callee);
                     return 'new(' + func + ', get(' + proto + ', "prototype"), ' + args + ')';
                 }
             case 'SequenceExpression':
-                return node.expressions.map(this.expression).join(', ');
+                return node.expressions.map(x => this.expression(x)).join(', ');
             case 'ParenthesizedExpression':
                 return '(' + this.expression(node.expression) + ')';
             case 'DoExpression':
@@ -305,7 +329,7 @@ export class Generator extends ASTManipulator {
             case 'BlockStatement':
                 this.pushScope();
                 node.body.forEach(x => this.infer.statement(x));
-                out = '{\n' + this.indent(this.getDeclarations() + node.body.map(this.statement)) + '}\n';
+                out = '{\n' + this.indent((this.getDeclarations() + node.body.map(x => this.statement(x))).slice(0, -1)) + '\n}\n';
                 this.popScope();
                 return out;
             case 'EmptyStatement':
@@ -347,7 +371,7 @@ export class Generator extends ASTManipulator {
                     } else {
                         out += 'default:\n';
                     }
-                    out += this.indent(case_.consequent.map(this.statement).join('\n')) + '\n';
+                    out += this.indent(case_.consequent.map(x => this.statement(x)).join('\n')) + '\n';
                 }
                 return 'switch (' + this.expression(node.discriminant) + ') {\n' + this.indent(out) + '}\n';
             case 'ThrowStatement':
@@ -423,13 +447,26 @@ export class Generator extends ASTManipulator {
     program(node: b.Program): string {
         this.importIncludes = [];
         this.functions = [];
-        let out = 'init(argc, argv);\n';
+        this.topLevel = 'init(argc, argv);\n';
         this.infer.program(node);
         for (let statement of node.body) {
-            out += this.statement(statement);
+            this.topLevel += this.statement(statement);
         }
-        return '\n#include "builtins/neutrino.h"\n\n' + this.importIncludes.join('\n') + '\n\n\n' 
-        + this.getDeclarations() + '\n\n\n' + this.functions.join('\n') + '\n\n\nint main(int argc, char** argv) {\n' + this.indent(out) + '\n}';
+        let out = '\n#include "builtins/neutrino.h"\n\n';
+        if (this.importIncludes.length > 0) {
+            out += this.importIncludes.join('\n') + '\n\n';
+        } else {
+            out += '\n';
+        }
+        let decls = this.getDeclarations();
+        if (decls.length > 0) {
+            out += decls + '\n\n';
+        }
+        if (this.functions.length > 0) {
+            out += this.functions.join('\n\n') + '\n\n';
+        }
+        out += 'int main(int argc, char** argv) {\n' + this.indent(this.topLevel.slice(0, -1)) + '\n}\n';
+        return out;
     }
 
 }

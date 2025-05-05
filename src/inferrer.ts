@@ -153,9 +153,9 @@ export class Inferrer extends ASTManipulator {
             case 'TSConstructorType':
                 return this.function(node.parameters, node.typeAnnotation, true);
             case 'TSUnionType':
-                return t.union(...node.types.map(this.type));
+                return t.union(...node.types.map(x => this.type(x)));
             case 'TSIntersectionType':
-                return t.intersection(...node.types.map(this.type));
+                return t.intersection(...node.types.map(x => this.type(x)));
             case 'TSConditionalType':
                 throw new TypeError('Conditional types are not supported');
             case 'TSIndexedAccessType':
@@ -202,7 +202,7 @@ export class Inferrer extends ASTManipulator {
             case 'never':
                 return t.never;
             case 'union':
-                return t.union(...type.types.map(this.typeofOperator));
+                return t.union(...type.types.map(x => this.typeofOperator(x)));
             default:
                 return t.union(t.string('undefined'), t.string('object'), t.string('boolean'), t.string('number'), t.string('string'), t.string('symbol'), t.string('bigint'));
         }

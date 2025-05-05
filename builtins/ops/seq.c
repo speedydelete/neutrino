@@ -204,7 +204,7 @@ static inline bool seq_any_array(any* x, array* y) {return seq_any_any(x, create
         any*: seq_any_any) \
 )(x, y))
 
-#define nseq(x, y) !seq(x, y)
+#define sne(x, y) !seq(x, y)
 
 
 #endif

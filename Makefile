@@ -1,6 +1,6 @@
 
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-parameter -g
+CFLAGS = -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-parameter -O3
 LDFLAGS = -lm
 
 BUILTINS = ./builtins

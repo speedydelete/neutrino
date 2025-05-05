@@ -104,7 +104,7 @@ static inline any* add_any_object(any* x, object* y) {return add_any_any(x, crea
 static inline any* add_any_array(any* x, array* y) {return add_any_any(x, create_any_from_string(array_to_string(y)));}
 
 
-#define js_add(x, y) (_Generic((x), \
+#define add(x, y) (_Generic((x), \
     void*: _Generic((y), \
         void*: add_undefined_undefined, \
         void**: add_undefined_null, \
