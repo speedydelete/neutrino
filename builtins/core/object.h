@@ -97,7 +97,7 @@ bool has_symbol(object* obj, symbol key);
 int num_keys(object* obj);
 
 
-#define call_obj(obj, method, ...) ((void*(*)())get_obj(obj, method))(obj, ## __VA_ARGS__)
+#define call_method(obj, method, ...) ((void*(*)())get_obj(obj, method))(obj, ## __VA_ARGS__)
 
 #define new(proto, func, ...) ((new_target = func) func(create_object(proto, 0), ## __VA_ARGS__))
 

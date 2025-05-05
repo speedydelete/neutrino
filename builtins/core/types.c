@@ -90,11 +90,11 @@ char* js_typeof_any(any* value) {
 any* object_to_primitive(object* value) {
     any* out = NULL;
     if (has_obj(value, Symbol_toPrimitive)) {
-        out = (any*)(call_obj(value, Symbol_toPrimitive, "default"));
+        out = (any*)(call_method(value, Symbol_toPrimitive, "default"));
     } else if (has_obj(value, "valueOf")) {
-        out = (any*)(call_obj(value, "valueOf"));
+        out = (any*)(call_method(value, "valueOf"));
     } else if (has_obj(value, "toString")) {
-        out = (any*)call_obj(value, "toString");
+        out = (any*)call_method(value, "toString");
     }
     if (out == NULL || out->type == OBJECT_TAG || out->type == ARRAY_TAG) {
         safe_malloc(out, sizeof(any));

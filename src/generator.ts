@@ -155,7 +155,11 @@ export class Generator extends ASTManipulator {
         let args: string;
         switch (node.type) {
             case 'Identifier':
-                return 'js_variable_' + this.id + '_' + node.name;
+                if (this.scope.getRoot().has(node.name) && !this.scope.isShadowed(node.name)) {
+                    return 'js_global_' + node.name;
+                } else {
+                    return 'js_variable_' + this.id + '_' + node.name;
+                }
             case 'PrivateName':
                 this.error('SyntaxError', 'Private names are not supported');
             case 'RegExpLiteral':
@@ -253,10 +257,19 @@ export class Generator extends ASTManipulator {
                         return this.expression(arg as b.Expression);
                     }
                 }).join(', ');
-                func = node.callee.type === 'Identifier' ? 'js_function_' + this.id + '_' + node.callee.name : this.expression(node.callee);
+                if (node.callee.type === 'Identifier') {
+                    func = this.expression(node.callee);
+                    if (func.startsWith('js_module')) {
+                        func = 'js_function' + func.slice(9);
+                    } else if (func.startsWith('js_global')) {
+                        func = 'js_globalfunction' + func.slice(9);
+                    }
+                } else {
+                    func = this.expression(node.callee);
+                }
                 if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
                     if (node.callee.type === 'MemberExpression') {
-                        let macro = node.type === 'OptionalCallExpression' ? 'optional_method_call' : 'call';
+                        let macro = node.type === 'OptionalCallExpression' ? 'optional_call_method' : 'call_method';
                         return macro + '(' + this.expression(node.callee.object) + ', ' + (node.callee.property.type === 'Identifier' ? this.string(node.callee.property.name) : this.expression(node.callee.property)) + ', ' + args + ')';
                     } else if (node.type === 'OptionalCallExpression') {
                         return 'optional_call(' + func + ', NULL, ' + args + ')';
@@ -410,12 +423,12 @@ export class Generator extends ASTManipulator {
     program(node: b.Program): string {
         this.importIncludes = [];
         this.functions = [];
-        let out = 'set_argv(argc, argv)\n';
+        let out = 'init(argc, argv);\n';
         this.infer.program(node);
         for (let statement of node.body) {
             out += this.statement(statement);
         }
-        return '\n#include "builtins/neutrino.c"\n\n' + this.importIncludes.join('\n') + '\n\n\n' 
+        return '\n#include "builtins/neutrino.h"\n\n' + this.importIncludes.join('\n') + '\n\n\n' 
         + this.getDeclarations() + '\n\n\n' + this.functions.join('\n') + '\n\n\nint main(int argc, char** argv) {\n' + this.indent(out) + '\n}';
     }
 

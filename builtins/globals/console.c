@@ -1,5 +1,6 @@
 
 #include "../core/object.h"
+#include "console.h"
 
 object* js_global_console;
 

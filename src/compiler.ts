@@ -1,8 +1,19 @@
 
+import * as fs from 'node:fs';
 import * as parser from '@babel/parser';
 import {Scope} from './util';
 import {Inferrer} from './inferrer';
 import {Generator} from './generator';
+
+
+let globalDTS = fs.readFileSync('builtins/index.d.ts').toString();
+const GLOBAL_SCOPE = new Scope({
+    file: 'builtins/index.d.ts',
+    raw: globalDTS,
+    line: 1,
+    col: 0,
+});
+(new Inferrer('builtins/index.d.ts', globalDTS, GLOBAL_SCOPE)).program(parser.parse(globalDTS, {plugins: [['typescript', {dts: true}]]}).program);
 
 
 export interface CompilerOptions {
@@ -25,12 +36,7 @@ export function compile(code: string, options: CompilerOptions = {}): string {
         sourceFilename: filename,
         plugins,
     }
-    let scope = new Scope({
-        file: filename,
-        raw: code,
-        line: 1,
-        col: 0,
-    });
+    let scope = new Scope(GLOBAL_SCOPE);
     if (options.dts) {
         (new Inferrer(filename, code, scope)).program(parser.parse(code, parserOptions).program);
     }

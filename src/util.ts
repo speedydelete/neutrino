@@ -146,6 +146,10 @@ export class Scope {
         this.exports.default = type;
     }
 
+    getRoot(): Scope {
+        return this.parent ? this.parent.getRoot() : this;
+    }
+
 }
 
 

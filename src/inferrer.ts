@@ -534,7 +534,7 @@ export class Inferrer extends ASTManipulator {
                 }
             case 'MemberExpression':
             case 'OptionalMemberExpression':
-                return this.getProp(this.expression(node.object), this.expression(node.property), node.optional ?? false);
+                return this.getProp(this.expression(node.object), node.property.type === 'Identifier' ? node.property.name : this.expression(node.property), node.optional ?? false);
             case 'BindExpression':
                 return this.expression(node.callee);
             case 'ConditionalExpression':
