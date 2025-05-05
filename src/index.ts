@@ -1,7 +1,8 @@
 
 export * from './highlighter';
-export * from './errors';
 export * as t from './types';
 export {Type, Scope} from './types';
-
-export * as infer from './inferrer';
+export * from './util';
+export {Inferrer} from './inferrer';
+export {Generator} from './generator';
+export {compile} from './compiler';

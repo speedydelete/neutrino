@@ -1,85 +1,5 @@
 
-import type * as b from '@babel/types';
-import {CompilerError} from './errors';
 import {highlight, HighlightColors} from './highlighter';
-
-
-export class Scope {
-
-    parent: Scope | null;
-    vars: Map<string, Type> = new Map();
-    types: Map<string, Type> = new Map();
-
-    constructor(parent?: Scope | null) {
-        this.parent = parent ?? null;
-    }
-
-    get(name: string): Type {
-        let type = this.vars.get(name);
-        if (type !== undefined) {
-            return type;
-        } else if (this.parent) {
-            return this.parent.get(name);
-        } else {
-            throw new CompilerError('ReferenceError', `${name} is not defined`);
-        }
-    }
-
-    has(name: string): boolean {
-        return this.vars.has(name) || (this.parent ? this.parent.has(name) : false);
-    }
-
-    set(name: string, type: Type): void {
-        this.vars.set(name, type);
-    }
-
-    getType(name: string): Type {
-        let type = this.types.get(name);
-        if (type !== undefined) {
-            return type;
-        } else if (this.parent) {
-            return this.parent.getType(name);
-        } else {
-            throw new CompilerError('ReferenceError', `${name} is not defined`);
-        }
-    }
-
-    hasType(name: string): boolean {
-        return this.types.has(name) || (this.parent ? this.parent.hasType(name) : false);
-    }
-
-    setType(name: string, type: Type): void {
-        this.types.set(name, type);
-    }
-
-    isShadowed(name: string, type: boolean = false): boolean {
-        let scope: Scope | null = this;
-        let wasFound = false;
-        while (scope) {
-            let vars = type ? scope.vars : scope.types;
-            if (vars.has(name)) {
-                if (wasFound) {
-                    return true;
-                } else {
-                    wasFound = true;
-                }
-            }
-            scope = scope.parent;
-        }
-        return false;
-    }
-
-    setLValue(node: b.LVal, const_: boolean, parseType: (type: b.Identifier['typeAnnotation']) => Type, type?: Type): void {
-        if (node.type === 'Identifier') {
-            type ??= parseType(node.typeAnnotation);
-            if (!const_) {
-                type = generalizeLiteral(type);
-            }
-            this.set(node.name, type);
-        }
-    }
-
-}
 
 
 export type BaseType<T extends string> = {type: T;}
@@ -98,7 +18,7 @@ export type NumberType = ValueTypeFactory<'number', number>;
 export type NumberLiteral = ReturnType<NumberType>;
 export type StringType = ValueTypeFactory<'string', string>;
 export type StringLiteral = ReturnType<StringType>;
-export type SymbolType = BaseType<'symbol'> & (() => BaseType<'symbol'> & {unique: true}) & {unique: false};
+export type SymbolType = ValueTypeFactory<'symbol', symbol>
 export type UniqueSymbol = ReturnType<SymbolType>;
 export type BigIntType = ValueTypeFactory<'bigint', bigint>;
 export type BigIntLiteral = ReturnType<BigIntType>;
@@ -132,7 +52,7 @@ export {
 export const boolean: BooleanType = createValueTypeFactory<'boolean', boolean>('boolean');
 export const number: NumberType = createValueTypeFactory<'number', number>('number');
 export const string: StringType = createValueTypeFactory<'string', string>('string');
-export const symbol: SymbolType = addToString(Object.assign(() => createType('symbol', {unique: true as const}), {type: 'symbol' as const, unique: false as const}));
+export const symbol: SymbolType = createValueTypeFactory<'symbol', symbol>('symbol');
 export const bigint: BigIntType = createValueTypeFactory<'bigint', bigint>('bigint');
 
 
@@ -213,14 +133,37 @@ export type {
 };
 
 
-export type Union = BaseType<'union'> & {types: Type[]};
+export type Union = BaseType<'union'> & {types: Exclude<Type, Union>[]};
 export function union(...types: Type[]): Union {
-    return createType('union', {types});
+    let out: Exclude<Type, Union>[] = [];
+    for (let type of types) {
+        if (type.type === 'union') {
+            for (let subtype of type.types) {
+                if (!out.some(x => matches(subtype, x))) {
+                    out.push(subtype);
+                }
+            }
+            out.push(...type.types);
+        } else {
+            if (!out.some(x => matches(type, x))) {
+                out.push(type);
+            }
+        }
+    }
+    return createType('union', {types: out});
 }
 
-export type Intersection = BaseType<'intersection'> & {types: Type[]};
+export type Intersection = BaseType<'intersection'> & {types: Exclude<Type, Intersection>[]};
 export function intersection(...types: Type[]): Intersection {
-    return createType('intersection', {types});
+    let out: Exclude<Type, Intersection>[] = [];
+    for (let type of types) {
+        if (type.type === 'intersection') {
+            out.push(...type.types);
+        } else {
+            out.push(type);
+        }
+    }
+    return createType('intersection', {types: out});
 }
 
 
@@ -277,7 +220,13 @@ export function matches(a: Type, b: Type): boolean {
     } else if (a.type === 'null' || b.type === 'null') {
         return a.type === 'null' && b.type === 'null';
     } else if (a.type === 'symbol') {
-        return (a.unique && a === b) || b.type === 'symbol';
+        if (b.type !== 'symbol') {
+            return false;
+        } else if ('value' in a && 'value' in b) {
+            return a.value === b.value;
+        } else {
+            return (!('value' in a) && !('value' in b));
+        }
     } else if (b.type === 'symbol') {
         return false;
     } else if (a.type !== b.type) {
@@ -439,9 +388,12 @@ export function toString(type: Type, colors: boolean | HighlightColors = false):
 }
 
 
-export function resolveObjectIntersection(...objects: ObjectType[]): ObjectType {
+export function resolveObjectIntersection(...objects: (ObjectType | Any)[]): ObjectType | Any {
     let out = object({});
     for (let obj of objects) {
+        if (obj.type === 'any') {
+            return any;
+        }
         for (let key of Reflect.ownKeys(obj.props)) {
             out.props[key] = obj.props[key];
         }
@@ -526,4 +478,21 @@ export function isNullish(type: Type): boolean | 'maybe' {
         default:
             return 'maybe';
     }
+}
+
+export function copyObject(type: ObjectType): ObjectType {
+    let out = object();
+    for (let key in type.props) {
+        out.props[key] = type.props[key];
+    }
+    if (type.call) {
+        out.call = {params: type.call.params, returnType: type.call.returnType, restParam: type.call.restParam};
+    }
+    if (type.construct) {
+        out.construct = {params: type.construct.params, returnType: type.construct.returnType, restParam: type.construct.restParam};
+    }
+    for (let index of type.indexes) {
+        out.indexes.push(index);
+    }
+    return out;
 }
