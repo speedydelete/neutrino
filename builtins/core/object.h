@@ -12,6 +12,7 @@
 typedef uint64_t symbol;
 extern symbol next_symbol;
 extern symbol Symbol_toPrimitive;
+extern symbol Symbol_iterator;
 static inline symbol create_symbol() {return next_symbol++;}
 
 
@@ -54,13 +55,13 @@ int hash4(char* str);
 
 object* create_object(object* proto, int length, ...);
 
-void* get_string(object* obj, char* key);
-void* get_symbol(object* obj, symbol key);
+void* get_obj_string(object* obj, char* key);
+void* get_obj_symbol(object* obj, symbol key);
 
-#define get_obj(obj, key) _Generic((key), char*: get_string, symbol: get_symbol)(obj, key)
+#define get_obj(obj, key) _Generic((key), char*: get_obj_string, symbol: get_obj_symbol)(obj, key)
 
 #define create_prop(name, key, value) \
-    safe_malloc(name, sizeof(struct property) - sizeof(void*)); \
+    safe_malloc(name, sizeof(struct property)); \
     name->next = NULL; \
     name->key = key; \
     name->is_accessor = false; \

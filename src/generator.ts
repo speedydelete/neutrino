@@ -216,13 +216,13 @@ export class Generator extends ASTManipulator {
                 }
             case 'ObjectExpression':
                 if (node.properties.length === 0) {
-                    return 'create_object(0)';
+                    return 'create_object(NULL, 0)';
                 } else {
-                    return 'create_object(' + node.properties.length * 2 + ', ' + node.properties.map(prop => {
+                    return 'create_object(NULL, ' + node.properties.length + ', ' + node.properties.map(prop => {
                         if (prop.type === 'SpreadElement') {
                             this.error('SyntaxError', 'Spread elements are not supported');
                         } else {
-                            let key = this.expression(prop.key);
+                            let key = prop.key.type === 'Identifier' ? this.string(prop.key.name) : this.expression(prop.key);
                             if (prop.type === 'ObjectMethod') {
                                 return key + ', ' + this.function(prop);
                             } else {

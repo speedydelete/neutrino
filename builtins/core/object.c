@@ -8,8 +8,9 @@
 #include "object.h"
 
 
-symbol next_symbol = 2;
+symbol next_symbol = 3;
 symbol Symbol_toPrimitive = 1;
+symbol Symbol_iterator = 2;
 
 
 int hash4(char* str) {
@@ -31,7 +32,7 @@ object* create_object(object* proto, int length, ...) {
     out->symbols = NULL;
     va_list args;
     va_start(args, length);
-    for (int i = 0; i < length/2; i++) {
+    for (int i = 0; i < length; i++) {
         set_string(out, va_arg(args, char*), va_arg(args, void*));
     }
     va_end(args);
@@ -39,7 +40,7 @@ object* create_object(object* proto, int length, ...) {
 }
 
 
-void* get_string(object* obj, char* key) {
+void* get_obj_string(object* obj, char* key) {
     struct property* prop = obj->data[hash4(key)];
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
@@ -52,12 +53,12 @@ void* get_string(object* obj, char* key) {
         prop = prop->next;
     }
     if (obj->prototype != NULL) {
-        return get_string(obj->prototype, key);
+        return get_obj_string(obj->prototype, key);
     }
     return NULL;
 }
 
-void* get_symbol(object* obj, symbol key) {
+void* get_obj_symbol(object* obj, symbol key) {
     struct symbol_property* prop = obj->symbols;
     while (prop != NULL) {
         if (prop->key == key) {
@@ -70,7 +71,7 @@ void* get_symbol(object* obj, symbol key) {
         prop = prop->next;
     }
     if (obj->prototype != NULL) {
-        return get_symbol(obj->prototype, key);
+        return get_obj_symbol(obj->prototype, key);
     }
     return NULL;
 }

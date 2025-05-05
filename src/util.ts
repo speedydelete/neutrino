@@ -7,12 +7,13 @@ import {highlight} from './highlighter';
 
 export interface SourceData {
     raw: string;
+    fullRaw: string;
     file: string;
     line: number;
     col: number;
 }
 
-export class CompilerError extends Error implements SourceData {
+export class CompilerError extends Error {
 
     [Symbol.toStringTag] = 'CompilerError' as const;
 
@@ -28,7 +29,7 @@ export class CompilerError extends Error implements SourceData {
         super(message);
         this.type = type;
         this.raw = src.raw;
-        this.rawLine = src.raw.split('\n')[0];
+        this.rawLine = src.fullRaw.split('\n')[src.line - 1];
         this.file = src.file;
         this.line = src.line;
         this.col = src.col;
@@ -159,6 +160,7 @@ export class ASTManipulator {
     raw: string;
     sourceData: SourceData = {
         raw: '',
+        fullRaw: '',
         file: '',
         line: -1,
         col: -1,
@@ -169,7 +171,9 @@ export class ASTManipulator {
     constructor(fullPath: string, raw: string, scope?: Scope) {
         this.fullPath = fullPath;
         this.raw = raw;
+        this.sourceData.fullRaw = raw;
         this.scope = scope ?? new Scope(this.sourceData);
+        this.scope.sourceData = this.sourceData;
     }
 
     newConnectedSubclass<T extends typeof ASTManipulator>(subclass: T): InstanceType<T> {

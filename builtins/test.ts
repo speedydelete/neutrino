@@ -1,6 +1,3 @@
 
-function test(x) {
-    return x + 1;
-}
-
-test(2);
+let x = {a: 'test'};
+print(x.a);

@@ -13,7 +13,7 @@
 #include "ops/arithmetic.c"
 #include "ops/nc.c"
 
-#include "globals/console.h"
+#include "globals/index.h"
 
 extern object* js_global_neutrino;
 

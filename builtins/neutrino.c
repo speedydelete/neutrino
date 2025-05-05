@@ -13,7 +13,7 @@
 #include "ops/arithmetic.c"
 #include "ops/nc.c"
 
-#include "globals/console.h"
+#include "globals/index.h"
 
 object* js_global_neutrino;
 
@@ -23,11 +23,12 @@ void init(int argc, char** argv) {
         n_argv->items[i] = argv[i];
     }
     js_global_neutrino = create_object(NULL, 1, "argv", n_argv);
+    init_core();
     init_console();
 }
 
 void js_globalfunction_print(object* this, char* text) {
-    printf("%s", text);
+    printf("%s\n", text);
 }
 
 #endif

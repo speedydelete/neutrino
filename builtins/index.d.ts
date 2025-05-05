@@ -39,6 +39,11 @@ interface RegExp {
     
 }
 
+
+declare var Infinity: number;
+declare var NaN: number;
+
+
 declare var console: {
     log(message: string, ...args: any[]): void;
 }

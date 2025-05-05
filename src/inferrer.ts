@@ -445,7 +445,7 @@ export class Inferrer extends ASTManipulator {
                     if (prop.key.type === 'PrivateName') {
                         continue;
                     }
-                    let key = this.expression(prop.key);
+                    let key = prop.key.type === 'Identifier' ? t.string(prop.key.name) : this.expression(prop.key);
                     if ((key.type === 'string' || key.type === 'number') && 'value' in key) {
                         if (prop.type === 'ObjectProperty') {
                             out.props[key.value] = this.expression(prop.value as b.Expression);
