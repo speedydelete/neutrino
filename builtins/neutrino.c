@@ -13,4 +13,6 @@
 #include "ops/arithmetic.c"
 #include "ops/nc.c"
 
+#include "globals/console.c"
+
 #endif
