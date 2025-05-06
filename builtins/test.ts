@@ -1,3 +1,3 @@
 
 let x = {a: 'test'};
-print(x.a);
+console.log(x.a);

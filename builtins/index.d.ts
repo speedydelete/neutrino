@@ -47,5 +47,3 @@ declare var NaN: number;
 declare var console: {
     log(message: string, ...args: any[]): void;
 }
-
-declare var print: (text: string) => void;

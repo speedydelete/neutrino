@@ -19,6 +19,4 @@ extern object* js_global_neutrino;
 
 void init(int argc, char** argv);
 
-void js_globalfunction_print(object* this, char* text);
-
 #endif

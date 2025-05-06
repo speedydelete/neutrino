@@ -27,8 +27,4 @@ void init(int argc, char** argv) {
     init_console();
 }
 
-void js_globalfunction_print(object* this, char* text) {
-    printf("%s\n", text);
-}
-
 #endif

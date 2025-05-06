@@ -20,6 +20,7 @@
         "stdbool.h": "c",
         "types.h": "c",
         "safe_malloc.h": "c",
-        "random": "c"
+        "random": "c",
+        "varargs.h": "c"
     }
 }
