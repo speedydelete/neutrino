@@ -1,3 +1,3 @@
 
-let x = {a: 'test'};
-console.log(x.a);
+let name = console.input('enter name: ');
+console.log('hi, ' + name)

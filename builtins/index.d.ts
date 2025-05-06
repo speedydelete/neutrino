@@ -45,5 +45,6 @@ declare var NaN: number;
 
 
 declare var console: {
-    log(message: string, ...args: any[]): void;
+    log(message: string): void;
+    input(prompt: string): string;
 }
