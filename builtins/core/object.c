@@ -33,7 +33,9 @@ object* create_object(object* proto, int length, ...) {
     va_list args;
     va_start(args, length);
     for (int i = 0; i < length; i++) {
-        set_string(out, va_arg(args, char*), va_arg(args, void*));
+        char* key = va_arg(args, char*);
+        void* value = va_arg(args, void*);
+        set_string(out, key, value);
     }
     va_end(args);
     return out;
