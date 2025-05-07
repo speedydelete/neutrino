@@ -251,7 +251,7 @@ export class Generator extends ASTManipulator {
                 if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
                     if (node.callee.type === 'MemberExpression') {
                         let macro = node.type === 'OptionalCallExpression' ? 'optional_call_method' : 'call_method';
-                        return macro + '(' + this.expression(node.callee.object) + ', ' + (node.callee.property.type === 'Identifier' ? this.string(node.callee.property.name) : this.expression(node.callee.property)) + ', ' + args.join(', ') + ')';
+                        return macro + '(' + this.expression(node.callee.object) + ', to_property_key(' + (node.callee.property.type === 'Identifier' ? this.string(node.callee.property.name) : this.expression(node.callee.property)) + '), ' + this.type((this.infer.expression(node.callee) as t.Object & {call: t.CallData}).call.returnType) + ', ' + args.join(', ') + ')';
                     } else if (node.type === 'OptionalCallExpression') {
                         return 'optional_call(' + func + ', NULL, ' + args.join(', ') + ')';
                     } else {

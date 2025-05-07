@@ -22,7 +22,7 @@ char* string_at(char* this, double index) {
 
 char* string_charAt(char* this, double index) {
     if (index < 0 || index >= strlen(this)) {
-        return '\0';
+        return "\0";
     }
     char* out = safe_malloc(sizeof(char) * 2);
     out[0] = this[(int)index];
@@ -62,7 +62,7 @@ bool string_includes(char* this, char* other) {
             }
         }
         return true;
-        not_found:
+        not_found:;
     }
     return false;
 }
@@ -80,7 +80,7 @@ double string_indexOf(char* this, char* other) {
             }
         }
         return i;
-        not_found:
+        not_found:;
     }
     return -1;
 }
@@ -98,7 +98,7 @@ double string_lastIndexOf(char* this, char* other) {
             }
         }
         return i;
-        not_found:
+        not_found:;
     }
     return -1;
 }
@@ -159,10 +159,10 @@ char* string_replace(char* this, char* old, char* new) {
             }
         }
         goto found;
-        not_found:
+        not_found:;
     }
     return this;
-    found:
+    found:;
     int new_length = strlen(new);
     int out_length = this_length - old_length + new_length;
     char* out = safe_malloc(sizeof(char) * (out_length + 1));
@@ -179,7 +179,7 @@ char* string_replaceAll(char* this, char* old, char* new) {
     if (old_length > this_length) {
         return this;
     }
-    char* out;
+    char* out = this;
     while (true) {
         int i;
         for (i = 0; i < this_length - old_length; i++) {
@@ -189,10 +189,10 @@ char* string_replaceAll(char* this, char* old, char* new) {
                 }
             }
             goto found;
-            not_found:
+            not_found:;
         }
         return out;
-        found:
+        found:;
         int new_length = strlen(new);
         int out_length = this_length - old_length + new_length;
         char* temp = safe_malloc(sizeof(char) * out_length);
@@ -213,7 +213,7 @@ char* string_slice(char* this, double start, double end) {
     if (end < 0) {
         end += length;
     }
-    int length = start - end;
+    length = start - end;
     char* out = safe_malloc(sizeof(char) * (length + 1));
     strncpy(out, this + (int)start, length);
     out[length] = '\0';
@@ -340,7 +340,7 @@ void* get_string_string(char* value, char* key) {
         return string_trim;
     } else if (strcmp(key, "trimEnd") == 0) {
         return string_trimEnd;
-    } else if (strcmp(key, "trimStart" == 0)) {
+    } else if (strcmp(key, "trimStart") == 0) {
         return string_trimStart;
     } else {
         return NULL;

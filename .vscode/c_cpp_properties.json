@@ -8,12 +8,11 @@
             ],
             "defines": [],
             "cStandard": "c17",
-            "cppStandard": "gnu++17",
+            "cppStandard": "gnu++23",
             "intelliSenseMode": "linux-gcc-x64",
             "compilerArgs": [
                 "-Wall",
                 "-Wextra",
-                "-Wpedantic",
                 "-Werror"
             ]
         }

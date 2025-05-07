@@ -2,9 +2,10 @@
 #ifndef Neutrino
 #define Neutrino
 
+#include "core/array.h"
 #include "core/boolean.h"
 #include "core/string.h"
-#include "core/array.h"
+#include "core/object.h"
 #include "core/types.h"
 
 #include "globals/index.h"

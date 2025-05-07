@@ -2,10 +2,10 @@
 #ifndef Neutrino
 #define Neutrino
 
+#include "core/array.h"
 #include "core/boolean.h"
 #include "core/string.h"
 #include "core/object.h"
-#include "core/array.h"
 #include "core/types.h"
 
 #include "globals/index.h"
@@ -27,12 +27,12 @@ void init(int argc, char** argv) {
         "neutrino", js_global_neutrino,
         "undefined", js_global_undefined,
         "Infinity", js_global_Infinity,
-        "NaN": js_global_NaN,
-        "isNaN": js_global_isNaN,
+        "NaN", js_global_NaN,
+        "isNaN", js_global_isNaN,
         "isFinite", js_global_isFinite,
         "parseFloat", js_global_parseFloat,
         "parseInt", js_global_parseInt,
-        "Math", js_global_Math,
+        "Math", js_global_Math
     );
 }
 

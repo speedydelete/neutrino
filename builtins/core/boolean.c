@@ -1,5 +1,6 @@
 
 #include <stdbool.h>
+#include <string.h>
 #include "util.h"
 
 
@@ -17,6 +18,8 @@ void* get_boolean_string(bool this, char* key) {
         return boolean_toString;
     } else if (strcmp(key, "valueOf") == 0) {
         return boolean_valueOf;
+    } else {
+        return NULL;
     }
 }
 

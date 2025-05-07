@@ -24,22 +24,16 @@ extern symbol next_symbol;
 
 symbol js_globalfunction_Symbol(void);
 
-char* boolean_toString(bool this);
-bool boolean_valueOf(bool this);
+char* symbol_toString(symbol this);
+symbol symbol_valueOf(symbol this);
 
-void* get_boolean_string(void* this, char* key);
-void* get_boolean_symbol(void* this, symbol key);
+void* get_symbol_string(symbol this, char* key);
+void* get_symbol_symbol(symbol this, symbol key);
 
-void* set_boolean_string(void* this, char* key, void* value);
-void* set_boolean_symbol(void* this, symbol key, void* value);
+void* set_symbol_string(symbol this, char* key, void* value);
+void* set_symbol_symbol(symbol this, symbol key, void* value);
 
-bool has_boolean_string(void* this, char* key);
-bool has_boolean_symbol(void* this, symbol key);
-
-bool delete_boolean_string(void* this, char* key);
-bool delete_boolean_symbol(void* this, symbol key);
-
-void set_enumerable_boolean_string(void* this, char* key, bool enumerable);
-void set_enumerable_boolean_symbol(void* this, symbol key, bool enumerable);
+bool has_symbol_string(symbol this, char* key);
+bool has_symbol_symbol(symbol this, symbol key);
 
 #endif

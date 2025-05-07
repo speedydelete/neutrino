@@ -1,4 +1,6 @@
 
+#include <stdlib.h>
+#include <string.h>
 #include "util.h"
 #include "symbol.h"
 
@@ -25,11 +27,11 @@ symbol js_globalfunction_Symbol(void) {
 }
 
 
-char* symbol_toString(bool this) {
+char* symbol_toString(symbol this) {
     return "Symbol()";
 }
 
-symbol symbol_valueOf(bool this) {
+symbol symbol_valueOf(symbol this) {
     return this;
 }
 
@@ -39,6 +41,8 @@ void* get_symbol_string(symbol this, char* key) {
         return symbol_toString;
     } else if (strcmp(key, "valueOf") == 0) {
         return symbol_valueOf;
+    } else {
+        return NULL;
     }
 }
 
@@ -67,6 +71,7 @@ bool has_symbol_symbol(symbol this, symbol key) {
 
 bool delete_symbol_string(symbol this, char* key) {
     throw(stradd("Cannot delete properties of symbol (deleting '", stradd(key, "')")));
+    exit(1);
 }
 
 bool delete_symbol_symbol(symbol this, symbol key) {

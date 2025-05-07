@@ -70,7 +70,7 @@ void* get_object_symbol(object* obj, symbol key) {
     name->key = key; \
     name->value = value;
 
-void* set_object_string(object* obj, char* key, void* value) {
+void set_object_string(object* obj, char* key, void* value) {
     int hashed = hash4(key);
     struct string_property* prop = obj->data[hashed];
     if (prop == NULL) {
@@ -78,37 +78,38 @@ void* set_object_string(object* obj, char* key, void* value) {
         obj->data[hashed] = prop;
         return;
     }
+    struct string_property* prev = prop;
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
             prop->value = value;
             return;
         }
+        prev = prop;
         prop = prop->next;
     }
-    struct string_property* new_prop;
     create_prop(string_property, new_prop, key, value);
-    prop->next = new_prop;
-    return value;
+    prev->next = new_prop;
+    return;
 }
 
-void* set_object_symbol(object* obj, symbol key, void* value) {
+void set_object_symbol(object* obj, symbol key, void* value) {
     struct symbol_property* prop = obj->symbols;
     if (prop == NULL) {
-        create_prop(symbol_property, prop, key, value);
-        obj->symbols = prop;
+        create_prop(symbol_property, new_prop, key, value);
+        obj->symbols = new_prop;
         return;
     }
+    struct symbol_property* prev = prop;
     while (prop != NULL) {
         if (prop->key == key) {
             prop->value = value;
             return;
         }
+        prev = prop;
         prop = prop->next;
     }
-    struct symbol_property* new_prop;
     create_prop(symbol_property, new_prop, key, value);
-    prop->next = new_prop;
-    return value;
+    prev->next = new_prop;
 }
 
 

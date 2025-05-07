@@ -1,20 +1,16 @@
 
-#include <stdbool.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <gc.h>
 #include "util.h"
 
 
-void throw(char* msg) {
-    fprintf(stderr, msg);
-    exit(4);
-}
-
 void* safe_malloc(size_t size) {
     void* out = GC_malloc(size);
     if (out == NULL) {
-        throw('InternalError: malloc failed');
+        throw("InternalError: malloc failed");
     }
     return out;
 }
@@ -81,6 +77,13 @@ any* create_any_from_array(array* value) {
     any* out = safe_malloc(sizeof(any));
     out->type = ARRAY_TAG;
     out->array = value;
+    return out;
+}
+
+any* create_any_from_function(void*(*value)()) {
+    any* out = safe_malloc(sizeof(any));
+    out->type = FUNCTION_TAG;
+    out->function = value;
     return out;
 }
 

@@ -2,18 +2,22 @@
 #ifndef Neutrino_core_util
 #define Neutrino_core_util
 
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <math.h>
 #include <gc.h>
 
-void throw(char* msg);
+#define JS_NULL (void**)NULL
+#define NaN (double)NAN
+
+#define throw(msg) fprintf(stderr, "%s", msg); exit(4);
+
 void* safe_malloc(size_t size);
 char* stradd(char* x, char* y);
 
-
 typedef uint32_t symbol;
-
 
 struct string_property {
     char* key;
@@ -22,7 +26,7 @@ struct string_property {
 };
 
 struct symbol_property {
-    char* key;
+    symbol key;
     void* value;
     struct symbol_property* next;
 };
@@ -75,6 +79,7 @@ any* create_any_from_string(char* value);
 any* create_any_from_symbol(symbol value);
 any* create_any_from_object(object* value);
 any* create_any_from_array(array* value);
+any* create_any_from_function(void*(*value)());
 any* create_any_from_any(any* value);
 
 #define create_any(x) (_Generic((x), \
@@ -86,7 +91,7 @@ any* create_any_from_any(any* value);
     object*: create_any_from_object, \
     array*: create_any_from_array, \
     void*(*)(): create_any_from_function, \
-    any*: create_any_from_any, \
+    any*: create_any_from_any \
 )(x))
 
 #endif

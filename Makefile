@@ -3,13 +3,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-parameter -g
 LDFLAGS = -lm
 
-BUILTINS = ./builtins
-CORE = $(BUILTINS)/core
-GLOBALS = $(BUILTINS)/globals
-
-SRCS = main.c $(BUILTINS)/neutrino.c \
-	$(CORE)/array.c $(CORE)/boolean.c $(CORE)/number.c $(CORE)/object.c $(CORE)/string.c $(CORE)/symbol.c $(CORE)/util.c \
-	$(GLOBALS)/core.c $(GLOBALS)/console.c
+SRCS = main.c ./builtins/index.c $(wildcard ./builtins/core/*.c) $(wildcard ./builtins/globals/*.c)
 
 OBJS = $(SRCS:.c=.o)
 
