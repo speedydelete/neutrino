@@ -2,20 +2,15 @@
 #ifndef Neutrino
 #define Neutrino
 
-#include "core/object.h"
+#include "core/boolean.h"
+#include "core/string.h"
 #include "core/array.h"
 #include "core/types.h"
-
-#include "ops/eq.c"
-#include "ops/seq.c"
-#include "ops/compare.c"
-#include "ops/add.c"
-#include "ops/arithmetic.c"
-#include "ops/nc.c"
 
 #include "globals/index.h"
 
 extern object* js_global_neutrino;
+extern object* js_global_globalThis;
 
 void init(int argc, char** argv);
 

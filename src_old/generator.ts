@@ -3,12 +3,15 @@ import type * as b from '@babel/types';
 import * as t from './types';
 import {Type} from './types';
 import {Inferrer} from './inferrer';
-import {Caster} from './caster';
 import {Scope, ASTManipulator} from './util';
 
 
 const TYPES = {
     any: 'any*',
+    unknown: 'any*',
+    never: 'any*',
+    union: 'any*',
+    intersection: 'any*',
     undefined: 'void*',
     void: 'void*',
     null: 'void**',
@@ -17,7 +20,45 @@ const TYPES = {
     string: 'char*',
     symbol: 'symbol',
     object: 'object*',
-    array: 'array*',
+};
+
+const UNARY_OP_FUNCS: {[K in b.UnaryExpression['operator']]: string} = {
+    '-': 'minus',
+    '+': 'plus',
+    '!': 'not',
+    '~': 'lnot',
+    'typeof': 'js_typeof',
+    'void': 'js_void',
+    'delete': 'js_delete',
+    'throw': 'throw',
+};
+
+const BINARY_OP_FUNCS: {[K in Exclude<b.BinaryExpression['operator'], '|>'> | '&&' | '||' | '??']: string} = {
+    '==': 'eq',
+    '!=': 'ne',
+    '===': 'seq',
+    '!==': 'sne',
+    '<': 'lt',
+    '<=': 'lte',
+    '>': 'gt',
+    '>=': 'gte',
+    '+': 'add',
+    '-': 'sub',
+    '*': 'mul',
+    '/': 'div',
+    '%': 'mod',
+    '**': 'exp',
+    '|': 'or',
+    '^': 'xor',
+    '&': 'and',
+    '<<': 'lsh',
+    '>>': 'rsh',
+    '>>>': 'ursh',
+    'in': 'in',
+    'instanceof': 'instanceof',
+    '&&': 'land',
+    '||': 'lor',
+    '??': 'nc',
 };
 
 
@@ -27,7 +68,6 @@ export class Generator extends ASTManipulator {
     static nextAnon: number = 0;
 
     infer: Inferrer;
-    cast: Caster;
     importIncludes: string[] = [];
     functions: string[] = [];
     topLevel: string = '';
@@ -36,7 +76,6 @@ export class Generator extends ASTManipulator {
     constructor(fullPath: string, raw: string, scope?: Scope) {
         super(fullPath, raw, scope);
         this.infer = this.newConnectedSubclass(Inferrer);
-        this.cast = this.newConnectedSubclass(Caster);
         this.id = Generator.nextID++;
     }
 
@@ -50,7 +89,9 @@ export class Generator extends ASTManipulator {
     }
 
     type(type: Type, name?: string, decl: boolean = false): string {
-        if (type.type === 'object' && type.call) {
+        if (type.type === 'bigint') {
+            this.error('TypeError', 'BigInts are not supported');
+        } else if (type.type === 'object' && type.call) {
             return this.type(type.call.returnType) + ' ' + (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(object* this, ' + type.call.params.map(param => this.type(param[1], param[0])).join(', ') + ')';
         } else {
             let out = TYPES[type.type];
@@ -62,7 +103,7 @@ export class Generator extends ASTManipulator {
     }
 
     identifier(name: string, isFunction: boolean = false): string {
-        if (this.globalVarExists(name) && !this.globalIsShadowed(name)) {
+        if (this.scope.getRoot().has(name) && !this.scope.isShadowed(name)) {
             return 'js_global' + (isFunction ? 'function' : '') + '_' + name;
         } else {
             return 'js_' + (isFunction ? 'function' : 'variable') + '_' + this.id + '_' + name;
@@ -197,20 +238,22 @@ export class Generator extends ASTManipulator {
             case 'FunctionExpression':
                 return this.function(node);
             case 'UnaryExpression':
-                return this.cast.unary(node.operator, this.expression(node.argument), this.infer.expression(node.argument).type);
+                return UNARY_OP_FUNCS[node.operator] + '(' + this.expression(node.argument) + ')';
             case 'UpdateExpression':
                 return (node.prefix ? '' : 'postfix_' + (node.operator === '++' ? 'inc' : 'dec')) + '(' + this.expression(node.argument) + ')';
             case 'BinaryExpression':
-                return this.cast.binary(node.operator, this.expression(node.left), this.infer.expression(node.left).type, this.expression(node.right), this.infer.expression(node.right).type);
             case 'LogicalExpression':
-                return this.expression(node.left) + ' ' + node.operator + ' ' + this.expression(node.right);
+                if (node.operator === '|>') {
+                    this.error('SyntaxError', 'The pipeline operator is not supported');
+                }
+                return BINARY_OP_FUNCS[node.operator] + '(' + this.expression(node.left) + ', ' + this.expression(node.right) + ')';
             case 'AssignmentExpression':
                 return this.assignment(node.left, this.expression(node.right));
             case 'MemberExpression':
             case 'OptionalMemberExpression':
                 let prop = node.property.type === 'Identifier' ? this.string(node.property.name) : this.expression(node.property);
                 func = node.type === 'MemberExpression' ? 'get' : 'optional_get';
-                return `${func}(${this.expression(node.object)}, to_property_key(${prop}))`;
+                return func + '(' + this.expression(node.object) + ', ' + prop +')';
             case 'BindExpression':
                 this.error('SyntaxError', 'Bind expressions are not supported');
             case 'ConditionalExpression':
@@ -354,7 +397,6 @@ export class Generator extends ASTManipulator {
                 if (node.update) {
                     out += this.expression(node.update);
                 }
-                out += ') ' + this.statement(node.body);
                 return out;
             case 'ForInStatement':
             case 'ForOfStatement':

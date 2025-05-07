@@ -3,6 +3,7 @@ import * as b from '@babel/types';
 import * as t from './types';
 import {Type} from './types';
 import {ASTManipulator} from './util';
+import {getImportType} from './imports';
 
 
 export class Inferrer extends ASTManipulator {
@@ -24,36 +25,35 @@ export class Inferrer extends ASTManipulator {
         this.thisType = newType;
     }
 
-    property(node: b.Expression | b.PrivateName): PropertyKey | Type {
-        return node.type === 'Identifier' ? node.name : this.expression(node);
-    }
-
-    function(params: (b.Identifier | b.RestElement | b.Pattern | b.TSParameterProperty)[], returnType?: b.FunctionDeclaration['returnType'], obj?: t.Object): t.Object {
+    function(params: (b.Identifier | b.RestElement | b.Pattern | b.TSParameterProperty)[], returnType: b.FunctionDeclaration['returnType'], construct: boolean = false, obj?: t.Object): t.Object {
         let outParams: t.Parameter[] = [];
-        let restParam: t.RestParameter | undefined = undefined;
+        let restParam: t.Parameter | null = null;
         for (let param of params) {
             if (param.type === 'RestElement') {
                 restParam = [this.getRaw(param.argument), this.type(param.typeAnnotation)];
             } else if (param.type === 'TSParameterProperty') {
                 this.error('SyntaxError', 'Parameter properties are not supported');
-            } else if (param.type === 'AssignmentPattern') {
-                outParams.push([this.getRaw(param.left), this.type(param.typeAnnotation), param.right]);
             } else {
-                outParams.push([this.getRaw(param), this.type(param.typeAnnotation), null]);
+                outParams.push([this.getRaw(param), this.type(param.typeAnnotation)]);
             }
         }
         if (!obj) {
-            let ftype = this.getGlobalVar('Function');
+            let ftype = this.scope.getType('Function');
             if (ftype.type !== 'object') {
                 this.error('TypeError', 'Global type Function must be an object type');
             }
-            obj = t.copy(ftype);
+            obj = t.copyObject(ftype);
         }
-        obj.call = {
+        let out = {
             params: outParams,
             restParam,
-            returnType: returnType ? this.type(returnType) : t.any,
+            returnType: this.type(returnType),
         };
+        if (construct) {
+            obj.construct = out;
+        } else {
+            obj.call = out;
+        }
         return obj;
     }
 
@@ -73,18 +73,16 @@ export class Inferrer extends ASTManipulator {
                 if (prop.kind === 'get') {
                     out.props[prop.key.name] = this.type(prop.typeAnnotation);
                 } else if (prop.kind === 'method') {
-                    out.props[prop.key.name] = this.function(prop.parameters, prop.typeAnnotation);
+                    out.props[prop.key.name] = this.function(prop.parameters, prop.typeAnnotation, false);
                 }
             } else if (prop.type === 'TSCallSignatureDeclaration') {
-                this.function(prop.parameters, prop.typeAnnotation, out);
-            } else if (prop.type === 'TSIndexSignature') {
-                let valueType = this.type(prop.typeAnnotation);
+                this.function(prop.parameters, prop.typeAnnotation, false, out);
+            } else if (prop.type === 'TSConstructSignatureDeclaration') {
+                this.function(prop.parameters, prop.typeAnnotation, true, out);
+            } else {
+                let type = this.type(prop.typeAnnotation);
                 for (let param of prop.parameters) {
-                    let type = this.type(param.typeAnnotation);
-                    if (!(type.type === 'string' || type.type === 'number' || type.type === 'symbol')) {
-                        this.error('TypeError', `Type ${type} cannot be used as an index type`);
-                    }
-                    out.indexes[type.type] = type;
+                    out.indexes.push([param.name, this.type(param.typeAnnotation), type]);
                 }
             }
         }
@@ -104,10 +102,13 @@ export class Inferrer extends ASTManipulator {
             case 'TSIntrinsicKeyword':
                 throw new TypeError('The intrinsic keyword is not supported');
             case 'TSAnyKeyword':
-            case 'TSUnknownKeyword':
-            case 'TSNeverKeyword':
                 return t.any;
+            case 'TSUnknownKeyword':
+                return t.unknown;
+            case 'TSNeverKeyword':
+                return t.never;
             case 'TSVoidKeyword':
+                return t.void;
             case 'TSUndefinedKeyword':
                 return t.undefined;
             case 'TSNullKeyword':
@@ -121,9 +122,9 @@ export class Inferrer extends ASTManipulator {
             case 'TSSymbolKeyword':
                 return t.symbol;
             case 'TSBigIntKeyword':
-                this.error('SyntaxError', 'BigInts are not supported');
+                return t.bigint;
             case 'TSObjectKeyword':
-                return t.object();
+                return t.object;
             case 'TSThisType':
                 return this.thisType ?? t.undefined;
             case 'TSLiteralType':
@@ -131,13 +132,13 @@ export class Inferrer extends ASTManipulator {
                 this.setSourceData(x);
                 switch (x.type) {
                     case 'BooleanLiteral':
-                        return t.boolean;
+                        return t.boolean(x.value);
                     case 'NumericLiteral':
-                        return t.number;
+                        return t.number(x.value);
                     case 'StringLiteral':
-                        return t.string;
+                        return t.string(x.value);
                     case 'BigIntLiteral':
-                        this.error('SyntaxError', 'BigInts are not supported');
+                        return t.bigint(BigInt(x.value));
                     default:
                         this.error('InternalError', `Bad/unrecongnized AST literal type subnode in types.parse() of type ${node.type}`);
                 }
@@ -148,29 +149,33 @@ export class Inferrer extends ASTManipulator {
             case 'TSTypeLiteral':
                 return this.objectType(node.members);
             case 'TSFunctionType':
+                return this.function(node.parameters, node.typeAnnotation, false);
             case 'TSConstructorType':
-                return this.function(node.parameters, node.typeAnnotation);
+                return this.function(node.parameters, node.typeAnnotation, true);
             case 'TSUnionType':
-                return t.union(node.types.map(x => this.type(x)));
+                return t.union(...node.types.map(x => this.type(x)));
             case 'TSIntersectionType':
-                return t.intersection(node.types.map(x => this.type(x)));
+                return t.intersection(...node.types.map(x => this.type(x)));
             case 'TSConditionalType':
                 throw new TypeError('Conditional types are not supported');
             case 'TSIndexedAccessType':
-                let propType = node.indexType;
-                let prop: PropertyKey | Type;
-                if (propType.type === 'TSLiteralType') {
-                    if (propType.literal.type === 'StringLiteral') {
-                        prop = propType.literal.value;
-                    } else if (propType.literal.type === 'NumericLiteral') {
-                        prop = propType.literal.value;
-                    } else {
-                        this.error('TypeError', 'Cannot be used as a property key');
-                    }
-                } else {
-                    prop = this.type(propType);
+                let obj = this.type(node.objectType);
+                if (obj.type !== 'object') {
+                    this.error('TypeError', `Indexed access types must be used with an object type`);
                 }
-                return this.getProp(this.type(node.objectType), prop);
+                let prop = this.type(node.indexType);
+                if ((prop.type === 'string' || prop.type === 'number') && 'value' in prop) {
+                    return obj.props[prop.value];
+                } else {
+                    for (let [_, type, result] of obj.indexes) {
+                        if (t.matches(prop, type)) {
+                            return result;
+                        }
+                    }
+                    this.error('TypeError', `Invalid type for indexed access type: ${prop}`);
+                }
+            case 'TSMappedType':
+                return t.object({}, null, [[node.typeParameter.name, this.type(node.typeParameter.constraint), this.type(node.typeAnnotation)]]);
             case 'TSImportType':
                 this.error('TypeError', 'Import types are not supported');
             case 'TSTemplateLiteralType':
@@ -180,7 +185,30 @@ export class Inferrer extends ASTManipulator {
         }
     }
 
-    setLValue(node: b.LVal | b.OptionalMemberExpression, type?: Type, export_?: boolean): void {
+    typeofOperator(type: Type): Type {
+        switch (type.type) {
+            case 'undefined':
+            case 'boolean':
+            case 'number':
+            case 'string':
+            case 'symbol':
+            case 'bigint':
+            case 'object':
+                return t.string(type.type);
+            case 'void':
+                return t.string('undefined');
+            case 'null':
+                return t.string('object');
+            case 'never':
+                return t.never;
+            case 'union':
+                return t.union(...type.types.map(x => this.typeofOperator(x)));
+            default:
+                return t.union(t.string('undefined'), t.string('object'), t.string('boolean'), t.string('number'), t.string('string'), t.string('symbol'), t.string('bigint'));
+        }
+    }
+
+    setLValue(node: b.LVal, const_: boolean, type?: Type, export_?: boolean): void {
         this.setSourceData(node);
         if (node.type === 'Identifier') {
             if (node.typeAnnotation && node.typeAnnotation.type !== 'Noop') {
@@ -188,31 +216,42 @@ export class Inferrer extends ASTManipulator {
             } else if (!type) {
                 type = t.any;
             }
+            if (!const_) {
+                type = t.generalizeLiteral(type);
+            }
             this.scope.set(node.name, type);
             if (export_) {
-                this.export(node.name);
+                this.scope.export(node.name);
             }
         } else if (node.type === 'ObjectPattern') {
             if (type) {
+                type = this.toObjectType(type);
+                if (type.type === 'object') {
+                    type = t.copyObject(type);
+                }
                 for (let prop of node.properties) {
                     if (prop.type === 'RestElement') {
-                        this.setLValue(prop.argument, type);
+                        this.setLValue(prop.argument, const_, type);
                     } else {
                         let propType = this.expression(prop.key);
-                        this.setLValue(prop.value as b.Pattern, this.getProp(type, propType));
+                        this.setLValue(prop.value as b.Pattern, const_, this.getProp(type, propType));
+                        if (type.type === 'object' && (propType.type === 'string' || propType.type === 'number' || propType.type === 'symbol') && 'value' in propType) {
+                            delete type.props[propType.value];
+                        }
                     }
                 }
             } else {
                 for (let prop of node.properties) {
                     if (prop.type === 'RestElement') {
-                        this.setLValue(prop.argument);
+                        this.setLValue(prop.argument, const_);
                     } else {
-                        this.setLValue(prop.value as b.Pattern);
+                        this.setLValue(prop.value as b.Pattern, const_);
                     }
                 }
             }
         } else if (node.type === 'ArrayPattern') {
             if (type) {
+                type = this.toObjectType(type);
                 for (let i = 0; i < node.elements.length; i++) {
                     let elt = node.elements[i];
                     if (!elt) {
@@ -220,19 +259,19 @@ export class Inferrer extends ASTManipulator {
                     }
                     if (type.type === 'any') {
                         if (elt.type === 'RestElement') {
-                            this.setLValue(elt.argument, t.any);
+                            this.setLValue(elt.argument, const_, t.any);
                         } else {
-                            this.setLValue(elt, t.any);
+                            this.setLValue(elt, const_, t.any);
                         }
                     } else {
                         if (elt.type === 'RestElement') {
                             if ('elts' in type && typeof type.elts === 'object' && type.elts !== null && 'type' in type.elts) {
-                                this.setLValue(elt.argument, type.elts as Type);
+                                this.setLValue(elt.argument, const_, type.elts as Type);
                             } else {
-                                this.setLValue(elt.argument, t.any);
+                                this.setLValue(elt.argument, const_, t.any);
                             }
                         } else {
-                            this.setLValue(elt, this.getProp(type, i));
+                            this.setLValue(elt, const_, this.getProp(type, i));
                         }
                     }
                 }
@@ -242,9 +281,9 @@ export class Inferrer extends ASTManipulator {
                         continue;
                     }
                     if (elt.type === 'RestElement') {
-                        this.setLValue(elt.argument);
+                        this.setLValue(elt.argument, const_);
                     } else {
-                        this.setLValue(elt);
+                        this.setLValue(elt, const_);
                     }
                 }
             }
@@ -254,24 +293,18 @@ export class Inferrer extends ASTManipulator {
             }
             let nullish = t.isNullish(type);
             if (nullish === 'maybe') {
-                this.setLValue(node.left, t.union(type, this.expression(node.right)));
+                this.setLValue(node.left, const_, t.union(type, this.expression(node.right)));
             } else if (nullish) {
-                this.setLValue(node.left, this.expression(node.right));
+                this.setLValue(node.left, const_, this.expression(node.right));
             } else {
-                this.setLValue(node.left, type);
+                this.setLValue(node.left, const_, type);
             }
-        } else if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') {
-            let obj = this.expression(node.object);
-            if (node.type === 'OptionalMemberExpression' && obj.type === 'undefined' || obj.type === 'null') {
-                return;
-            }
-            this.setProp(obj, this.property(node.property), type ?? t.any);
         }
     }
 
     class(node: b.Class): Type {
         let inst = t.object();
-        let variable = t.object({prototype: inst}, {params: [], returnType: inst});
+        let variable = t.object({prototype: inst}, {params: [], returnType: inst, restParam: null});
         if (node.superClass) {
             this.superTypes.push(this.getProp(this.expression(node.superClass), 'prototype'));
         }
@@ -288,7 +321,7 @@ export class Inferrer extends ASTManipulator {
                     this.popThisType();
                 } else if (prop.type === 'ClassMethod') {
                     this.pushThisType(prop.static ? variable : inst);
-                    type = this.function(prop.params, prop.returnType, inst);
+                    type = this.function(prop.params, prop.returnType, false, inst);
                     this.popThisType();
                 } else {
                     continue;
@@ -304,11 +337,7 @@ export class Inferrer extends ASTManipulator {
                 this.pushThisType(prop.static ? variable : inst);
                 let type = this.type(prop.typeAnnotation);
                 for (let param of prop.parameters) {
-                    let indexType = this.type(param.typeAnnotation);
-                    if (!(indexType.type === 'string' || indexType.type === 'number' || indexType.type === 'symbol')) {
-                        this.error('TypeError', `Type ${indexType} cannot be used as an index type`);
-                    }
-                    inst.indexes[indexType.type] = type;
+                    variable.indexes.push([param.name, this.type(param.typeAnnotation), type]);
                 }
                 this.popThisType();
             }
@@ -328,27 +357,27 @@ export class Inferrer extends ASTManipulator {
         let out: Type;
         switch (node.type) {
             case 'Identifier':
-                return this.getVar(node.name);
+                return this.scope.get(node.name);
             case 'PrivateName':
                 this.error('SyntaxError', 'Private names are not supported');
             case 'NullLiteral':
                 return t.null;
             case 'BooleanLiteral':
-                return t.boolean;
+                return t.boolean(node.value);
             case 'NumericLiteral':
-                return t.number;
+                return t.number(node.value);
             case 'StringLiteral':
-                return t.string;
+                return t.string(node.value);
             case 'BigIntLiteral':
-                this.error('SyntaxError', 'BigInts are not supported');
+                return t.bigint(BigInt(node.value));
             case 'RegExpLiteral':
-                return this.getGlobalVar('RegExp');
+                return this.scope.get('RegExp');
             case 'DecimalLiteral':
                 this.error('SyntaxError', 'Decimal literals are not supported');
             case 'Super':
                 return this.superTypes[this.superTypes.length - 1];
             case 'Import':
-                return t.function([['module', t.string, null], ['options', t.object({with: t.object({}, null, {string: t.string})}), null]], t.any);
+                return t.function([['module', t.string], ['options', t.object({with: t.object({}, null, [['attribute', t.string, t.string]])})]], t.any);
             case 'ThisExpression':
                 return this.thisType;
             case 'ArrowFunctionExpression':
@@ -373,7 +402,7 @@ export class Inferrer extends ASTManipulator {
                         }
                     } else if (elt.type === 'SpreadElement') {
                         let type = this.expression(elt.argument);
-                        if (type.type !== 'array') {
+                        if (!('isArray' in type)) {
                             this.error('TypeError', 'Spread elements in array literals must be array types');
                         }
                         if (type.elts instanceof Array) {
@@ -407,7 +436,7 @@ export class Inferrer extends ASTManipulator {
                         if (type.type !== 'object' || 'isArray' in type) {
                             this.error('TypeError', 'Spread elements in object literals must be object types');
                         }
-                        out = t.intersection(out, type);
+                        out = t.resolveObjectIntersection(out, type);
                         if (out.type === 'any') {
                             break;
                         }
@@ -416,13 +445,14 @@ export class Inferrer extends ASTManipulator {
                     if (prop.key.type === 'PrivateName') {
                         continue;
                     }
-                    let value: Type;
-                    if (prop.type === 'ObjectProperty') {
-                        value = this.expression(prop.value as b.Expression);
-                    } else {
-                        value = this.function(prop.params, prop.returnType);
+                    let key = prop.key.type === 'Identifier' ? t.string(prop.key.name) : this.expression(prop.key);
+                    if ((key.type === 'string' || key.type === 'number') && 'value' in key) {
+                        if (prop.type === 'ObjectProperty') {
+                            out.props[key.value] = this.expression(prop.value as b.Expression);
+                        } else {
+                            out.props[key.value] = this.function(prop.params, prop.returnType);
+                        }
                     }
-                    this.setProp(out, this.property(prop.key), value);
                 }
                 return out;
             case 'RecordExpression':
@@ -448,9 +478,9 @@ export class Inferrer extends ASTManipulator {
                     case 'void':
                         return t.undefined;
                     case 'typeof':
-                        return t.string;                        
+                        return this.typeofOperator(this.expression(node.argument));
                     default:
-                        return t.undefined;
+                        return t.never;
                 }
             case 'UpdateExpression':
                 return t.number;
@@ -503,14 +533,8 @@ export class Inferrer extends ASTManipulator {
                     }
                 }
             case 'MemberExpression':
-                return this.getProp(this.expression(node.object), this.property(node.property));
             case 'OptionalMemberExpression':
-                let obj = this.expression(node.object);
-                if (obj.type === 'undefined' || obj.type === 'null') {
-                    return obj;
-                } else {
-                    return this.getProp(obj, this.property(node.property));
-                }
+                return this.getProp(this.expression(node.object), node.property.type === 'Identifier' ? node.property.name : this.expression(node.property), node.optional ?? false);
             case 'BindExpression':
                 return this.expression(node.callee);
             case 'ConditionalExpression':
@@ -526,14 +550,9 @@ export class Inferrer extends ASTManipulator {
                 }
             case 'CallExpression':
             case 'OptionalCallExpression':
-                let func = this.expression(node.callee);
-                if (node.optional && (func.type === 'undefined' || func.type === 'null')) {
-                    return func;
-                } else {
-                    return this.call(func);
-                }
+                return this.call(this.expression(node.callee), node.optional ?? false);
             case 'NewExpression':
-                return this.getProp(this.expression(node.callee), 'prototype');
+                return this.construct(this.expression(node.callee), node.optional ?? false);
             case 'SequenceExpression':
                 return this.expression(node.expressions[node.expressions.length - 1]);
             case 'ParenthesizedExpression':
@@ -553,19 +572,18 @@ export class Inferrer extends ASTManipulator {
                 let prop = node.meta.name + '.' + node.property.name;
                 switch (prop) {
                     case 'new.target':
-                        return t.union(t.object(), t.undefined);
+                        return t.union(t.object, t.undefined);
                     case 'import.meta':
-                        return t.object();
+                        return t.object;
                     default:
                         this.error('SyntaxError', `Unrecognized meta property ${prop}`);
                 }
             case 'ImportExpression':
-                // return getImportType(this.fullPath, this.expression(node.source), node.options ? this.expression(node.options) : undefined);
-                return t.any;
+                return getImportType(this.fullPath, this.expression(node.source), node.options ? this.expression(node.options) : undefined);
             case 'TSNonNullExpression':
                 out = this.expression(node.expression);
                 if (t.isNullish(out) === true) {
-                    return t.any;
+                    return t.never;
                 } else {
                     return out;
                 }
@@ -580,14 +598,11 @@ export class Inferrer extends ASTManipulator {
         } else {
             let out = t.object();
             for (let attr of attrs) {
-                out.props[attr.value.value] = t.string;
+                let key = attr.key.type === 'Identifier' ? attr.key.name : attr.key.value;
+                out.props[key] = t.string(attr.value.value);
             }
             return out;
         }
-    }
-
-    importSpecifier(node: b.Identifier | b.StringLiteral): string {
-        return node.type === 'Identifier' ? node.name : node.value;
     }
     
     statement(node: b.Statement, export_: boolean = false): void {
@@ -597,28 +612,27 @@ export class Inferrer extends ASTManipulator {
             this.statement(node.body);
         } else if (node.type === 'VariableDeclaration') {
             for (let decl of node.declarations) {
-                this.setLValue(decl.id, decl.init ? this.expression(decl.init) : undefined, export_);
+                this.setLValue(decl.id, node.kind === 'const', decl.init ? this.expression(decl.init) : undefined, export_);
             }
         } else if (node.type === 'FunctionDeclaration') {
             if (!node.id) {
                 this.error('InternalError', 'Invalid AST');
             }
-            this.setVar(node.id.name, this.function(node.params, node.returnType));
+            this.scope.set(node.id.name, this.function(node.params, node.returnType, false));
             if (export_) {
-                this.export(node.id.name);
+                this.scope.export(node.id.name);
             }
         } else if (node.type === 'ClassDeclaration') {
             this.class(node);
         } else if (node.type === 'ImportDeclaration') {
-            // let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
-            let ns = t.any;
+            let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
             for (let spec of node.specifiers) {
                 if (spec.type === 'ImportSpecifier') {
-                    this.setLValue(spec.local, this.getProp(ns, this.importSpecifier(spec.imported)));
+                    this.setLValue(spec.local, true, this.getProp(ns, spec.imported.type === 'Identifier' ? spec.imported.name : spec.imported.value));
                 } else if (spec.type === 'ImportDefaultSpecifier') {
-                    this.setLValue(spec.local, this.getProp(ns, 'default'));
+                    this.setLValue(spec.local, true, this.getProp(ns, 'default'));
                 } else {
-                    this.setLValue(spec.local, ns);
+                    this.setLValue(spec.local, true, ns);
                 }
             }
         } else if (node.type === 'ExportNamedDeclaration') {
@@ -628,30 +642,29 @@ export class Inferrer extends ASTManipulator {
             if (!node.source) {
                 for (let spec of node.specifiers) {
                     if (spec.type === 'ExportSpecifier') {
-                        this.export(spec.local.name, spec.exported.type === 'Identifier' ? spec.exported.name : spec.exported.value);
+                        this.scope.export(spec.local.name, spec.exported.type === 'Identifier' ? spec.exported.name : spec.exported.value);
                     }
                 }
             } else {
-                // let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
-                let ns = t.any;
+                let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
                 for (let spec of node.specifiers) {
-                    let name = this.importSpecifier(spec.exported);
+                    let name = spec.exported.type === 'Identifier' ? spec.exported.name : spec.exported.value;
                     if (spec.type === 'ExportSpecifier') {
-                        this.export(name, undefined, this.getProp(ns, spec.local.name));
+                        this.scope.export(name, undefined, this.getProp(ns, spec.local.name));
                     } else if (spec.type === 'ExportNamespaceSpecifier') {
-                        this.export(name, undefined, ns);
+                        this.scope.export(name, undefined, ns);
                     }
                 }
             }
         } else if (node.type === 'ExportDefaultDeclaration') {
             this.scope.exportDefault(this.expression(node.declaration));
-        // } else if (node.type === 'ExportAllDeclaration') {
-        //     let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
-        //     if (ns.type === 'object') {
-        //         for (let key in ns.props) {
-        //             this.scope.export(key, undefined, ns.props[key]);
-        //         }
-        //     }
+        } else if (node.type === 'ExportAllDeclaration') {
+            let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
+            if (ns.type === 'object') {
+                for (let key in ns.props) {
+                    this.scope.export(key, undefined, ns.props[key]);
+                }
+            }
         } else if (node.type === 'TSTypeAliasDeclaration') {
             this.scope.setType(node.id.name, this.type(node.typeAnnotation));
         } else if (node.type === 'TSInterfaceDeclaration') {
@@ -660,7 +673,7 @@ export class Inferrer extends ASTManipulator {
             if (!node.id) {
                 this.error('InternalError', 'Invalid AST');
             }
-            this.scope.setType(node.id.name, this.function(node.params, node.returnType));
+            this.scope.setType(node.id.name, this.function(node.params, node.returnType, false));
         } else if (node.type === 'TSEnumDeclaration') {
             let out = t.object();
             let i = 0;
@@ -669,7 +682,7 @@ export class Inferrer extends ASTManipulator {
                 if (item.initializer) {
                     out.props[key] = this.expression(item.initializer);
                 } else {
-                    out.props[key] = t.number;
+                    out.props[key] = t.number(i);
                 }
                 i++;
             }

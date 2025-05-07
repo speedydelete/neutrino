@@ -1,26 +1,9 @@
 {
     "files.associations": {
-        "charconv": "c",
-        "expected": "c",
-        "optional": "c",
-        "format": "c",
-        "system_error": "c",
-        "array": "c",
-        "functional": "c",
-        "tuple": "c",
-        "type_traits": "c",
-        "utility": "c",
-        "compare": "c",
-        "variant": "c",
-        "stdio.h": "c",
-        "object.h": "c",
-        "stdarg.h": "c",
-        "typeinfo": "c",
-        "set": "c",
+        "string.h": "c",
+        "util.h": "c",
+        "ctype.h": "c",
         "stdbool.h": "c",
-        "types.h": "c",
-        "safe_malloc.h": "c",
-        "random": "c",
-        "varargs.h": "c"
+        "cstdlib": "c"
     }
 }

@@ -61,34 +61,27 @@ export class CompilerError extends Error {
 export class Scope {
 
     parent: Scope | null;
-    isFunction: boolean;
     vars: Map<string, Type> = new Map();
     types: Map<string, Type> = new Map();
     exports: {[key: string]: Type} = {};
-    sourceData: SourceData;
 
-    constructor(sourceData: SourceData, isFunction?: boolean);
-    constructor(parent: Scope, isFunction?: boolean);
-    constructor(parent: Scope | SourceData, isFunction: boolean = false) {
-        if (parent instanceof Scope) {
-            this.parent = parent;
-            this.sourceData = parent.sourceData;
-            this.exports = this.parent.exports;
-        } else {
-            this.parent = null;
-            this.sourceData = parent;
+    constructor(parent?: Scope | null) {
+        if (parent === undefined) {
+            parent = GLOBAL_SCOPE;
+        } else if (parent instanceof Scope) {
+            this.exports = parent.exports;
         }
-        this.isFunction = isFunction;
+        this.parent = parent;
     }
 
-    get(name: string): Type {
+    get(sourceData: SourceData, name: string): Type {
         let type = this.vars.get(name);
         if (type !== undefined) {
             return type;
         } else if (this.parent) {
-            return this.parent.get(name);
+            return this.parent.get(sourceData, name);
         } else {
-            throw new CompilerError('ReferenceError', `${name} is not defined`, this.sourceData);
+            throw new CompilerError('ReferenceError', `${name} is not defined`, sourceData);
         }
     }
 
@@ -100,14 +93,14 @@ export class Scope {
         this.vars.set(name, type);
     }
 
-    getType(name: string): Type {
+    getType(sourceData: SourceData, name: string): Type {
         let type = this.types.get(name);
         if (type !== undefined) {
             return type;
         } else if (this.parent) {
-            return this.parent.getType(name);
+            return this.parent.getType(sourceData, name);
         } else {
-            throw new CompilerError('ReferenceError', `${name} is not defined`, this.sourceData);
+            throw new CompilerError('ReferenceError', `${name} is not defined`, sourceData);
         }
     }
 
@@ -119,45 +112,46 @@ export class Scope {
         this.types.set(name, type);
     }
 
-    isShadowed(name: string, type: boolean = false): boolean {
-        let scope: Scope | null = this;
-        let wasFound = false;
-        while (scope) {
-            let vars = type ? scope.vars : scope.types;
-            if (vars.has(name)) {
-                if (wasFound) {
-                    return true;
-                } else {
-                    wasFound = true;
-                }
-            }
-            scope = scope.parent;
-        }
-        return false;
-    }
-
-    export(name: string, exported?: string, type?: Type): void {
+    export(sourceData: SourceData, name: string, exported?: string, type?: Type): void {
         if (name in this.exports) {
-            throw new CompilerError('TypeError', `Cannot re-export ${name}`, this.sourceData);
+            throw new CompilerError('TypeError', `Cannot re-export ${name}`, sourceData);
         }
-        this.exports[exported ?? name] = type ?? this.get(name);
+        this.exports[exported ?? name] = type ?? this.get(sourceData, name);
     }
 
     exportDefault(type: Type): void {
         this.exports.default = type;
     }
 
-    getRoot(): Scope {
-        return this.parent ? this.parent.getRoot() : this;
+    globalExists(name: string): boolean {
+        if (!this.parent) {
+            return this.vars.has(name);
+        } else {
+            return this.parent.globalExists(name);
+        }
+    }
+
+    globalIsShadowed(name: string): boolean {
+        if (!this.parent) {
+            return false;
+        }
+        if (this.vars.has(name)) {
+            return this.parent.globalExists(name);
+        } else {
+            return this.parent.globalIsShadowed(name);
+        }
     }
 
 }
 
 
+export const GLOBAL_SCOPE: Scope = new Scope(null);
+
+
 export class ASTManipulator {
 
-    fullPath: string;
-    raw: string;
+    fullPath: string = '';
+    raw: string = '';
     sourceData: SourceData = {
         raw: '',
         fullRaw: '',
@@ -166,14 +160,14 @@ export class ASTManipulator {
         col: -1,
     }
     scope: Scope;
+    globalScope: Scope = GLOBAL_SCOPE;
     connectedSubclassInstances: ASTManipulator[] = [];
 
     constructor(fullPath: string, raw: string, scope?: Scope) {
         this.fullPath = fullPath;
         this.raw = raw;
         this.sourceData.fullRaw = raw;
-        this.scope = scope ?? new Scope(this.sourceData);
-        this.scope.sourceData = this.sourceData;
+        this.scope = scope ?? new Scope(GLOBAL_SCOPE);
     }
 
     newConnectedSubclass<T extends typeof ASTManipulator>(subclass: T): InstanceType<T> {
@@ -182,6 +176,54 @@ export class ASTManipulator {
         this.connectedSubclassInstances.push(out);
         // @ts-ignore
         return out;
+    }
+
+    getVar(name: string): Type {
+        return this.scope.get(this.sourceData, name);
+    }
+
+    getGlobalVar(name: string): Type {
+        return GLOBAL_SCOPE.get(this.sourceData, name);
+    }
+
+    varExists(name: string): boolean {
+        return this.scope.has(name);
+    }
+
+    globalVarExists(name: string): boolean {
+        return GLOBAL_SCOPE.has(name);
+    }
+
+    setVar(name: string, type: Type): void {
+        this.scope.set(name, type);
+    }
+
+    getTypeVar(name: string): Type {
+        return this.scope.getType(this.sourceData, name);
+    }
+
+    getGlobalTypeVar(name: string): Type {
+        return GLOBAL_SCOPE.getType(this.sourceData, name);
+    }
+
+    typeVarExists(name: string): boolean {
+        return this.scope.hasType(name);
+    }
+
+    setTypeVar(name: string, type: Type): void {
+        this.scope.setType(name, type);
+    }
+
+    export(name: string, exported?: string, type?: Type): void {
+        this.scope.export(this.sourceData, name, exported, type);
+    }
+
+    exportDefault(type: Type): void {
+        this.scope.exportDefault(type);
+    }
+
+    globalIsShadowed(name: string): boolean {
+        return this.scope.globalIsShadowed(name);
     }
 
     getRaw(node: b.Node): string {
@@ -222,128 +264,81 @@ export class ASTManipulator {
         }
     }
 
-    resolveIntersection(...types: t.Type[]): t.Object | t.Any {
-        // @ts-ignore
-        return t.resolveObjectIntersection(...t.union(...types.map(this.toObjectType)).types);
-    }
-
-    toObjectTypeOrUnion(type: Type, optional?: false): t.Object | t.Any | t.Union;
-    toObjectTypeOrUnion(type: Type, optional: true): t.Object | t.Any | t.Union | t.Undefined | t.Null;
-    toObjectTypeOrUnion(type: Type, optional: boolean): t.Object | t.Any | t.Union | t.Undefined | t.Null;
-    toObjectTypeOrUnion(type: Type, optional: boolean = false): t.Object | t.Any | t.Union {
-        if (type.type === 'unknown' || type.type === 'never' || type.type === 'undefined' || type.type === 'null' || type.type === 'void') {
-            if (optional) {
-                // @ts-ignore
-                return type;
-            } else {
-                this.error('TypeError', 'Cannot read properties of ' + (type.type === 'void' ? 'undefined' : type.type));
-            }
-        } else if (type.type === 'union') {
-            return t.union(...type.types.map(x => this.toObjectTypeOrUnion(x, optional)));
-        } else if (type.type === 'intersection') {
-            return this.resolveIntersection(...type.types);
-        } else if (type.type === 'boolean' || type.type === 'number' || type.type === 'string' || type.type === 'symbol' || type.type === 'bigint') {
-            let typeName = type.type[0].toUpperCase() + type.type.slice(1);
-            let out = this.scope.getType(typeName);
-            if (out.type !== 'object') {
-                this.error('TypeError', `Type ${typeName} must be an object type`);
-            }
-            return out;
-        } else {
-            return type;
-        }
-    }
-
-    resolveObjectUnion(objs: t.Union): t.Object | t.Any {
-        let props: t.Object['props'] = {};
-        for (let type of objs.types) {
-            let casted = this.toObjectTypeOrUnion(type);
-            if (casted.type === 'union') {
-                casted = this.resolveObjectUnion(casted);
-            }
-            if (casted.type === 'any') {
+    getProp(type: Type, key: PropertyKey | Type): Type {
+        switch (type.type) {
+            case 'any':
                 return t.any;
-            }
-            for (let key in casted.props) {
-                if (key in props) {
-                    props[key] = t.union(props[key], casted.props[key]);
+            case 'object':
+                if (typeof key !== 'object') {
+                    return type.props[key] ?? t.undefined;
+                } else if (key.type === 'string' || key.type === 'number' || key.type === 'symbol') {
+                    return type.indexes[key.type] ?? t.undefined;
+                } else if (key.type === 'any') {
+                    if (type.indexes.string) {
+                        return type.indexes.number || type.indexes.symbol ? t.any : type.indexes.string;
+                    } else if (type.indexes.number) {
+                        return type.indexes.symbol ? t.any : type.indexes.number;
+                    } else {
+                        return type.indexes.symbol ?? t.undefined;
+                    }
                 } else {
-                    props[key] = casted.props[key];
+                    this.error('TypeError', `Type ${key.type} cannot be used as a property key`);
                 }
-            }
-            for (let key in props) {
-                if (!(key in casted.props)) {
-                    props[key] = t.union(props[key], t.undefined);
-                }
-            }
+            case 'undefined':
+                this.error('TypeError', `Cannot read properties of undefined (reading ${String(key)})`);
+            case 'null':
+                this.error('TypeError', `Cannot read properties of null (reading ${String(key)})`);
+            case 'boolean':
+                return this.getProp(this.getGlobalTypeVar('Boolean'), key);
+            case 'number':
+                return this.getProp(this.getGlobalTypeVar('Number'), key);
+            case 'string':
+                return this.getProp(this.getGlobalTypeVar('String'), key);
+            case 'symbol':
+                return this.getProp(this.getGlobalTypeVar('Symbol'), key);
+            default:
+                this.error('InternalError', `Invalid type: ${type}`)
         }
-        return t.object(props);
     }
 
-    toObjectType(type: Type, optional?: false): t.Object | t.Any;
-    toObjectType(type: Type, optional: true): t.Object | t.Any | t.Undefined | t.Null;
-    toObjectType(type: Type, optional: boolean): t.Object | t.Any | t.Undefined | t.Null;
-    toObjectType(type: Type, optional: boolean = false): t.Object | t.Any {
-        let obj = this.toObjectTypeOrUnion(type, optional);
-        if (obj.type === 'undefined' || obj.type === 'null') {
-            // @ts-ignore
-            return obj;
-        } else if (obj.type === 'union') {
-            return this.resolveObjectUnion(obj);
-        } else if (obj.type === 'any') {
-            return t.any;
-        } else {
-            return obj;
-        }
-    }
-    
-
-    getProp(obj: Type, prop: Type | PropertyKey, optional: boolean = false): Type {
-        obj = this.toObjectType(obj, optional);
-        if (typeof prop === 'string') {
-            prop = t.string(prop);
-        } else if (typeof prop === 'symbol') {
-            prop = t.symbol(prop);
-        } else if (typeof prop === 'number') {
-            prop = t.number(prop);
-        }
-        if (obj.type !== 'object') {
-            return obj;
-        } else if (prop.type === 'string' || prop.type === 'number' || prop.type === 'symbol') {
-            if ('value' in prop) {
-                return obj.props[prop.value];
-            } else {
-                for (let [_, key, value] of obj.indexes) {
-                    if (t.matches(prop, key)) {
+    setProp(type: Type, key: PropertyKey | Type, value: Type): Type {
+        switch (type.type) {
+            case 'any':
+                return t.any;
+            case 'object':
+                if (typeof key !== 'object') {
+                    type.props[key] = value;
+                } else if (key.type === 'string' || key.type === 'number' || key.type === 'symbol') {
+                    let index = type.indexes[key.type];
+                    if (index) {
+                        type.indexes[key.type] = t.union(index, value);
+                    } else {
                         return value;
                     }
+                } else if (key.type === 'any') {
+                    for (let key of t.INDEXES) {
+                        if (type.indexes[key]) {
+                            type.indexes[key] = t.union(type.indexes[key], value);
+                        } else {
+                            type.indexes[key] = value;
+                        }
+                    }
+                } else {
+                    this.error('TypeError', `Type ${key.type} cannot be used as a property key`);
                 }
-                return t.undefined;
-            }
-        } else {
-            return t.any;
+            default:
+                this.error('TypeError', `Cannot set properties of ${type.type} (setting ${String(key)})`);
         }
+        return type;
     }
 
-    call(obj: t.Type, optional: boolean = false): Type {
-        obj = this.toObjectType(obj, optional);
+    call(obj: Type): Type {
         if (obj.type !== 'object') {
-            return obj;
-        } else if (obj.call === null) {
-            this.error('TypeError', `Object of type ${obj} is not callable`);
+            this.error('TypeError', `Value of type ${obj} is not a function`);
+        } else if (!obj.call) {
+            this.error('TypeError', 'Is not a function');
         } else {
             return obj.call.returnType;
-        }
-    }
-
-    construct(obj: t.Type, optional: boolean = false): Type {
-        obj = this.toObjectType(obj, optional);
-        if (obj.type !== 'object') {
-            return t.any;
-        } else if (obj.construct === null) {
-            this.error('TypeError', `Object of type ${obj} is not constructable`);
-        } else {
-            return obj.construct.returnType;
         }
     }
 

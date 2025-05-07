@@ -4,11 +4,11 @@
 
 object* js_global_console;
 
-void console_log(object* this, char* text) {
+void console_log(char* text) {
     printf("%s\n", text);
 }
 
-char* console_input(object* this, char* prompt) {
+char* console_input(char* prompt) {
     printf("%s", prompt);
     char next;
     int length = 0;

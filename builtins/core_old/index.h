@@ -13,6 +13,24 @@
 #define JS_NULL ((void**)0)
 
 
+char* stradd(char* x, char* y);
+
+
+typedef struct array {
+    int length;
+    void** items;
+} array;
+
+array* create_array(int length);
+array* create_array_with_items(int length, ...);
+
+array* get_keys(object* obj);
+
+array* get_rest_arg_internal(va_list args, int count);
+
+#define get_rest_arg(name) array* name = get_rest_arg_internal(args, count - processed);
+
+
 static inline char* return_undefined(void* value) {return "undefined";}
 static inline char* return_null(void** value) {return "null";}
 static inline char* return_boolean(bool value) {return "boolean";}

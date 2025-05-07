@@ -1,72 +1,70 @@
 
-#include <stdbool.h>
-#include <ctype.h>
-#include <math.h>
+#include "util.h"
+#include "undefined.h"
+#include "null.h"
+#include "boolean.h"
+#include "number.h"
+#include "string.h"
+#include "symbol.h"
 #include "object.h"
 #include "array.h"
 
-#include "types.h"
 
 
-any* create_any_from_undefined(void* value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = UNDEFINED_TAG;
+array* create_array(int length) {
+    struct array* out;
+    safe_malloc(out, sizeof(array));
+    out->length = length;
+    safe_malloc(out->items, length * sizeof(void*));
     return out;
 }
 
-any* create_any_from_null(void** value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = NULL_TAG;
+array* create_array_with_items(int length, ...) {
+    va_list args;
+    va_start(args, length);
+    struct array* out;
+    safe_malloc(out, sizeof(array));
+    out->length = length;
+    safe_malloc(out->items, length * sizeof(void*));
+    for (int i = 0; i < length; i++) {
+        out->items[i] = va_arg(args, void*);
+    }
+    va_end(args);
     return out;
 }
 
-any* create_any_from_boolean(bool value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = BOOLEAN_TAG;
-    out->boolean = value;
+array* array_push(array* arr, any* item) {
+    any** new_items;
+    safe_malloc(new_items, (arr->length + 1) * sizeof(any));
+    for (int i = 0; i < arr->length; i++) {
+        new_items[i] = arr->items[i];
+    }
+    new_items[arr->length] = item;
+    arr->length++;
+    arr->items = new_items;
+    return arr;
+}
+
+array* get_keys(object* obj) {
+    array* out = create_array(num_keys(obj));
+    int index = 0;
+    struct property* prop;
+    for (int i = 0; i < 16; i++) {
+        prop = obj->data[i];
+        while (prop != NULL) {
+            out->items[index] = prop->key;
+            index++;
+            prop = prop->next;
+        }
+    }
     return out;
 }
 
-any* create_any_from_number(double value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = NUMBER_TAG;
-    out->number = value;
-    return out;
-}
-
-any* create_any_from_string(char* value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = STRING_TAG;
-    out->string = value;
-    return out;
-}
-
-any* create_any_from_symbol(symbol value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = SYMBOL_TAG;
-    out->symbol = value;
-    return out;
-}
-
-any* create_any_from_object(object* value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = OBJECT_TAG;
-    out->object = value;
-    return out;
-}
-
-any* create_any_from_array(array* value) {
-    any* out;
-    safe_malloc(out, sizeof(any));
-    out->type = ARRAY_TAG;
-    out->array = value;
+array* get_rest_arg_internal(va_list args, int count) {
+    array* out = create_array(count);
+    for (int i = 0; i < count; i++) {
+        out->items[i] = va_arg(args, void*);
+    }
     return out;
 }
 
@@ -105,7 +103,10 @@ any* object_to_primitive(object* value) {
 }
 
 char* array_to_string(array* value) {
-    return "[object Array]";
+    char* out = "";
+    for (int i = 0; i < value->length; i++) {
+        out = stradd(out, cast_any_to_string(value->items[i]));
+    }
 }
 
 double parse_number(char* value) {
