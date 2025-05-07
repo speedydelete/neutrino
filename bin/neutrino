@@ -1,6 +1,6 @@
 #!/bin/sh
-if [ -f .temp.c ]; then 
-    rm .temp.c
+if [ -f main.c ]; then 
+    rm main.c
 fi
 node --enable-source-maps -e '
 try {

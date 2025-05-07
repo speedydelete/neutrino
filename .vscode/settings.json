@@ -4,6 +4,7 @@
         "util.h": "c",
         "ctype.h": "c",
         "stdbool.h": "c",
-        "cstdlib": "c"
+        "cstdlib": "c",
+        "typeinfo": "c"
     }
 }

@@ -2,6 +2,7 @@
 #ifndef Neutrino_core_util
 #define Neutrino_core_util
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <inttypes.h>
 #include <gc.h>
@@ -29,7 +30,7 @@ struct symbol_property {
 typedef struct object {
     struct object* prototype;
     struct string_property* data[16];
-    struct symbol_property* symbols[2];
+    struct symbol_property* symbols;
 } object;
 
 

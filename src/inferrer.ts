@@ -43,7 +43,7 @@ export class Inferrer extends ASTManipulator {
             }
         }
         if (!obj) {
-            let ftype = this.getGlobalVar('Function');
+            let ftype = this.getGlobalTypeVar('Function');
             if (ftype.type !== 'object') {
                 this.error('TypeError', 'Global type Function must be an object type');
             }
@@ -57,8 +57,8 @@ export class Inferrer extends ASTManipulator {
         return obj;
     }
 
-    objectType(nodes: b.TSTypeElement[]): Type {
-        let out = t.object({});
+    objectType(nodes: b.TSTypeElement[]): t.Object {
+        let out = t.object();
         for (let prop of nodes) {
             this.setSourceData(prop);
             if (prop.type === 'TSPropertySignature') {
@@ -175,6 +175,12 @@ export class Inferrer extends ASTManipulator {
                 this.error('TypeError', 'Import types are not supported');
             case 'TSTemplateLiteralType':
                 this.error('TypeError', 'Template literal types are not supported');
+            case 'TSTypeReference':
+                if (node.typeName.type === 'Identifier') {
+                    return this.getTypeVar(node.typeName.name);
+                } else {
+                    this.error('SyntaxError', 'Qualified names are not supported');
+                }
             default:
                 this.error('InternalError', `Bad/unrecongnized AST node in Inferrer.type() of type ${node.type}`);
         }
@@ -655,7 +661,12 @@ export class Inferrer extends ASTManipulator {
         } else if (node.type === 'TSTypeAliasDeclaration') {
             this.scope.setType(node.id.name, this.type(node.typeAnnotation));
         } else if (node.type === 'TSInterfaceDeclaration') {
-            this.scope.setType(node.id.name, this.objectType(node.body.body));
+            let type = this.objectType(node.body.body);
+            if (this.typeVarExists(node.id.name)) {
+                t.objectAssign(this.getTypeVar(node.id.name) as t.Object, type);
+            } else {
+                this.setTypeVar(node.id.name, type);
+            }
         } else if (node.type === 'TSDeclareFunction') {
             if (!node.id) {
                 this.error('InternalError', 'Invalid AST');

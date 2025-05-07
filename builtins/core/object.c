@@ -1,9 +1,9 @@
 
-#include "safe_malloc.h"
 #include <stdbool.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <string.h>
+#include "util.h"
 
 #include "object.h"
 
@@ -16,7 +16,7 @@ int hash4(char* str) {
     return hash;
 }
 
-object* create_object(object* proto, int props, ...) {
+object* create_object(object* proto, int length, ...) {
     object* out = safe_malloc(sizeof(object));
     out->prototype = proto;
     for (int i = 0; i < 16; i++) {
@@ -64,8 +64,8 @@ void* get_object_symbol(object* obj, symbol key) {
 
 
 
-#define create_prop(name, key, value) \
-    safe_malloc(name, sizeof(struct property)); \
+#define create_prop(type, name, key, value) \
+    struct type* name = safe_malloc(sizeof(struct type)); \
     name->next = NULL; \
     name->key = key; \
     name->value = value;
@@ -74,7 +74,7 @@ void* set_object_string(object* obj, char* key, void* value) {
     int hashed = hash4(key);
     struct string_property* prop = obj->data[hashed];
     if (prop == NULL) {
-        create_prop(prop, key, value);
+        create_prop(string_property, prop, key, value);
         obj->data[hashed] = prop;
         return;
     }
@@ -86,7 +86,7 @@ void* set_object_string(object* obj, char* key, void* value) {
         prop = prop->next;
     }
     struct string_property* new_prop;
-    create_prop(new_prop, key, value);
+    create_prop(string_property, new_prop, key, value);
     prop->next = new_prop;
     return value;
 }
@@ -94,22 +94,19 @@ void* set_object_string(object* obj, char* key, void* value) {
 void* set_object_symbol(object* obj, symbol key, void* value) {
     struct symbol_property* prop = obj->symbols;
     if (prop == NULL) {
-        create_prop(prop, key, value);
+        create_prop(symbol_property, prop, key, value);
         obj->symbols = prop;
         return;
     }
     while (prop != NULL) {
         if (prop->key == key) {
-            if (prop->is_accessor) {
-                prop->funcs.set(obj, value);
-            }
             prop->value = value;
             return;
         }
         prop = prop->next;
     }
     struct symbol_property* new_prop;
-    create_prop(new_prop, key, value);
+    create_prop(symbol_property, new_prop, key, value);
     prop->next = new_prop;
     return value;
 }

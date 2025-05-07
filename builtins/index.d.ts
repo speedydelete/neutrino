@@ -1,4 +1,18 @@
 
+interface Object {}
+
+interface Function {
+    prototype: any;
+}
+
+interface Object {
+    valueOf(): any;
+    toString(): string;
+}
+
+interface IArguments {}
+
+
 declare var neutrino: {
     argv: string[];
 }
@@ -12,20 +26,11 @@ declare var NaN: number;
 /* no this */ declare function parseInt(value: string, base?: number /* = 10 */): number;
 
 
-interface Object {
+
+interface Boolean {
     toString(): string;
+    valueOf(): boolean;
 }
-
-interface Function {}
-interface IArguments {}
-interface Boolean {}
-interface BigInt {}
-interface Symbol {}
-
-declare var Boolean: (x: any) => boolean;
-declare var Number: (x: any) => number;
-declare var String: (x: any) => string;
-declare var Symbol: () => symbol;
 
 interface Number {
 
@@ -53,8 +58,21 @@ interface String {
     trimStart(): string;
 }
 
+interface Symbol {
+    toString(): string;
+    valueOf(): boolean;
+}
+
+interface BigInt {}
+
+declare var Boolean: (x: any) => boolean;
+declare var Number: (x: any) => number;
+declare var String: (x: any) => string;
+declare var Symbol: () => symbol;
+
+
 interface Array<T> {
-    [index: number]: T;
+    // [index: number]: T;
 }
 
 interface RegExp {
@@ -109,7 +127,9 @@ interface Math {
 declare var Math: Math;
 
 
-declare var console: {
+interface Console {
     /* no this */ log(message: string): void;
     /* no this */ input(prompt: string): string;
 }
+
+declare var console: Console;

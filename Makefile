@@ -5,12 +5,10 @@ LDFLAGS = -lm
 
 BUILTINS = ./builtins
 CORE = $(BUILTINS)/core
-OPS = $(BUILTINS)/ops
 GLOBALS = $(BUILTINS)/globals
 
 SRCS = main.c $(BUILTINS)/neutrino.c \
-	$(CORE)/array.c $(CORE)/object.c $(CORE)/types.c \
-	$(OPS)/eq.c $(OPS)/seq.c $(OPS)/compare.c $(OPS)/arithmetic.c $(OPS)/add.c \
+	$(CORE)/array.c $(CORE)/boolean.c $(CORE)/number.c $(CORE)/object.c $(CORE)/string.c $(CORE)/symbol.c $(CORE)/util.c \
 	$(GLOBALS)/core.c $(GLOBALS)/console.c
 
 OBJS = $(SRCS:.c=.o)

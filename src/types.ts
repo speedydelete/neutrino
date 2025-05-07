@@ -145,8 +145,7 @@ export function union(...types: (Type | Type[])[]): Type {
     }
 }
 
-export function mergeObjects(types: ObjectType[]): ObjectType {
-    let out = copy(types[0]);
+export function objectAssign(out: ObjectType, ...types: ObjectType[]): ObjectType {
     for (let type of types.slice(1)) {
         for (let key of Reflect.ownKeys(type.props)) {
             if (key in out.props) {
@@ -185,6 +184,10 @@ export function mergeObjects(types: ObjectType[]): ObjectType {
         }
     }
     return out;
+}
+
+export function mergeObjects(types: ObjectType[]): ObjectType {
+    return objectAssign(object(), ...types);
 }
 
 export function intersection(...types: (Type | Type[])[]): Type {

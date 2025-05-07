@@ -410,7 +410,7 @@ export class Generator extends ASTManipulator {
         for (let statement of node.body) {
             this.topLevel += this.statement(statement);
         }
-        let out = '\n#include "builtins/neutrino.h"\n\n';
+        let out = '\n#include "builtins/index.h"\n\n';
         if (this.importIncludes.length > 0) {
             out += this.importIncludes.join('\n') + '\n\n';
         } else {
