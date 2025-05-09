@@ -302,7 +302,7 @@ char* string_trimStart(char* this) {
 void* get_string_string(char* value, char* key) {
     if (strcmp(key, "length") == 0) {
         double* out = safe_malloc(sizeof(double));
-        *out = strlen(key);
+        *out = strlen(value);
         return out;
     } else if (strcmp(key, "toString") == 0) {
         return string_toString;
