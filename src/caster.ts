@@ -6,6 +6,26 @@ import {ASTManipulator} from './util';
 
 export class Caster extends ASTManipulator {
 
+    toUndefined(value: string, type: Type['type']): string {
+        if (type === 'undefined') {
+            return value;
+        } else if (type === 'null') {
+            return `((void**)${value})`;
+        } else {
+            return `(${value}, NULL)`;
+        }
+    }
+
+    toNull(value: string, type: Type['type']): string {
+        if (type === 'null') {
+            return value;
+        } else if (type === 'undefined') {
+            return `((void*)${value})`;
+        } else {
+            return `(${value}, JS_NULL)`;
+        }
+    }
+
     toBoolean(value: string, type: Type['type']): string {
         switch (type) {
             case 'undefined':
@@ -48,9 +68,41 @@ export class Caster extends ASTManipulator {
 
     toString(value: string, type: Type['type']): string {
         switch (type) {
+            case 'undefined':
+            case 'null':
+                return `(${value}, "${type}")`;
+            case 'boolean':
+                return `(${value} ? "true" : "false")`;
+            case 'number':
+                return `number_to_string(${value}, 10)`;
+            case 'string':
+                return value;
+            case 'symbol':
+                return `(${value}, "Symbol()")`;
             default:
-                return `any_to_string(${value})`;
+                return `${type}_to_string(${value})`;
         }
+    }
+
+    toSymbol(value: string, type: Type['type']): string {
+        if (type !== 'symbol') {
+            this.error('TypeError', `Cannot convert value of type ${type} to a symbol`);
+        }
+        return value;
+    }
+
+    toObject(value: string, type: Type['type']): string {
+        if (type !== 'object') {
+            this.error('TypeError', `Cannot convert value of type ${type} to a symbol`);
+        }
+        return value;
+    }
+
+    toArray(value: string, type: Type['type']): string {
+        if (type !== 'array') {
+            this.error('TypeError', `Cannot convert value of type ${type} to a symbol`);
+        }
+        return value;
     }
 
     toPrimitive(value: string, type: Type['type']): string {
@@ -69,6 +121,35 @@ export class Caster extends ASTManipulator {
             return value;
         } else {
             return `create_any_from_${type}(${value})`;
+        }
+    }
+    
+    to(value: string, fromType: Type | Type['type'], toType: Type | Type['type']) {
+        if (typeof fromType === 'object') {
+            fromType = fromType.type;
+        }
+        if (typeof toType === 'object') {
+            toType = toType.type;
+        }
+        switch (toType) {
+            case 'undefined':
+                return this.toUndefined(value, fromType);
+            case 'null':
+                return this.toNull(value, fromType);
+            case 'boolean':
+                return this.toBoolean(value, fromType);
+            case 'number':
+                return this.toNumber(value, fromType);
+            case 'string':
+                return this.toString(value, fromType);
+            case 'symbol':
+                return this.toSymbol(value, fromType);
+            case 'object':
+                return this.toObject(value, fromType);
+            case 'array':
+                return this.toArray(value, fromType);
+            default:
+                return this.toAny(value, fromType);
         }
     }
 
@@ -105,7 +186,7 @@ export class Caster extends ASTManipulator {
 
     eq(x: string, xt: Type['type'], y: string, yt: Type['type']): string {
         if (xt === 'any' || yt === 'any') {
-            return `eq_any_any(${this.toAny(x, xt)}, ${this.toAny(y, yt)})`;
+            return `equal(${this.toAny(x, xt)}, ${this.toAny(y, yt)})`;
         } else if (xt === 'undefined' || xt === 'null' || yt === 'undefined' || yt === 'null') {
             return `(${x}, ${y}, ${(xt === 'undefined' || xt === 'null') && (yt === 'undefined' || yt === 'null')})`;
         } else if (xt === 'symbol' || yt === 'symbol') {
@@ -118,7 +199,7 @@ export class Caster extends ASTManipulator {
             if ((xt === 'object' || xt === 'array') && (yt === 'object' || yt === 'array')) {
                 return `(${x} == ${y})`;
             } else {
-                return `eq_any_any(${this.toPrimitive(x, xt)}, ${this.toPrimitive(y, yt)})`;
+                return `equal(${this.toPrimitive(x, xt)}, ${this.toPrimitive(y, yt)})`;
             }
         } else if (xt === 'string' || yt === 'string') {
             return `(strcmp(${this.toString(x, xt)}, ${this.toString(y, yt)}) == 0)`;
@@ -129,7 +210,7 @@ export class Caster extends ASTManipulator {
 
     seq(x: string, xt: Type['type'], y: string, yt: Type['type']): string {
         if (xt === 'any' || yt === 'any') {
-            return `seq_any_any(${this.toAny(x, xt)}, ${this.toAny(y, yt)})`;
+            return `strict_equal(${this.toAny(x, xt)}, ${this.toAny(y, yt)})`;
         } else if (xt !== yt) {
             return `(${x}, ${y}, false)`;
         } else if (xt === 'undefined' || xt === 'null') {
@@ -159,11 +240,16 @@ export class Caster extends ASTManipulator {
                 return this.seq(x, xt, y, yt);
             case '!==':
                 return '!' + this.seq(x, xt, y, yt);
+            case '+':
+                if (xt === 'string' || yt === 'string') {
+                    return `stradd(${this.toString(x, xt)}, ${this.toString(y, yt)})`;
+                } else {
+                    return this.toNumber(x, xt) + ' + ' + this.toNumber(y, yt);
+                }
             case '<':
             case '<=':
             case '>':
             case '>=':
-            case '+':
             case '-':
             case '*':
             case '/':

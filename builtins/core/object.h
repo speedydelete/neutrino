@@ -24,4 +24,10 @@ bool delete_object_symbol(object* obj, symbol key);
 bool has_object_string(object* obj, char* key);
 bool has_object_symbol(object* obj, symbol key);
 
+extern object* object_prototype;
+char* object_prototype_toString(object* this);
+object* object_prototype_valueOf(object* this);
+
+void init_object(void);
+
 #endif

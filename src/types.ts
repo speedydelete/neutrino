@@ -42,6 +42,9 @@ export interface CallData {
     params: Parameter[];
     restParam?: RestParameter;
     returnType: Type;
+    noThis?: boolean;
+    cName?: string;
+    thisIsAnyArray?: boolean;
 }
 
 export interface Indexes {
@@ -81,8 +84,8 @@ export function array(elts: Type | Type[]): ArrayType {
     return {type: 'array', elts, toString() {return 'array';}};
 }
 
-function function_(params: Parameter[], returnType: Type, restParam?: RestParameter): ObjectType {
-    return object({prototype: object()}, {params, returnType, restParam});
+function function_(params: Parameter[], returnType: Type, restParam?: RestParameter): ObjectType & {call: CallData} {
+    return object({prototype: object()}, {params, returnType, restParam}) as ObjectType & {call: CallData};
 }
 
 export {
@@ -213,3 +216,68 @@ export function isNullish(type: Type): boolean | 'maybe' {
 export function isTruthy(type: Type): boolean | 'maybe' {
     return (type.type === 'boolean' || type.type === 'number' || type.type === 'string') ? 'maybe' : !(type.type === 'undefined' || type.type === 'null');
 }
+
+function extends_(a: Type, b: Type): boolean {
+    if (a.type === 'object' && b.type === 'object') {
+        for (let key of Reflect.ownKeys(b.props)) {
+            let prop = a.props[key];
+            if (!prop || !extends_(prop, b.props[key])) {
+                return false;
+            }
+        }
+        if (b.call) {
+            let aCall = a.call;
+            let bCall = b.call;
+            if (!aCall) {
+                return false;
+            }
+            if (!extends_(aCall.returnType, bCall.returnType)) {
+                return false;
+            }
+            if (bCall.restParam) {
+                if (!aCall.restParam) {
+                    return false;
+                }
+                if (!extends_(bCall.restParam[1], aCall.restParam[1])) {
+                    return false;
+                }
+            }
+            if (!bCall.params.every((x, i) => aCall.params[i] && extends_(aCall.params[i][1], bCall.params[i][1]))) {
+                return false;
+            }
+        }
+        for (let key of INDEXES) {
+            if (b.indexes[key]) {
+                if (!a.indexes[key]) {
+                    return false;
+                }
+                if (!extends_(a.indexes[key], b.indexes[key])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    } else if (a.type === 'array' && b.type === 'array') {
+        let aElts = a.elts;
+        let bElts = b.elts;
+        if (Array.isArray(bElts)) {
+            if (Array.isArray(aElts)) {
+                return bElts.every((x, i) => aElts[i] && extends_(aElts[i], x));
+            } else {
+                return false;
+            }
+        } else {
+            if (Array.isArray(aElts)) {
+                return aElts.every(x => extends_(x, bElts));
+            } else {
+                return extends_(aElts, bElts);
+            }
+        }
+    } else if (a.type === 'any' || b.type === 'any') {
+        return true;
+    } else {
+        return a.type === b.type;
+    }
+}
+
+export {extends_ as extends};

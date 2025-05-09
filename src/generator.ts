@@ -4,7 +4,7 @@ import * as t from './types';
 import {Type} from './types';
 import {Inferrer} from './inferrer';
 import {Caster} from './caster';
-import {Scope, ASTManipulator} from './util';
+import {Stack, Scope, ASTManipulator} from './util';
 
 
 const TYPES = {
@@ -26,18 +26,23 @@ export class Generator extends ASTManipulator {
     static nextID: number = 0;
     static nextAnon: number = 0;
 
+    id: number;
+
     infer: Inferrer;
     cast: Caster;
     importIncludes: string[] = [];
     functions: string[] = [];
     topLevel: string = '';
-    id: number;
+    thisArgs: Stack<string>;
+    thisTypes: Stack<Type>;
 
     constructor(fullPath: string, raw: string, scope?: Scope) {
         super(fullPath, raw, scope);
         this.infer = this.newConnectedSubclass(Inferrer);
         this.cast = this.newConnectedSubclass(Caster);
         this.id = Generator.nextID++;
+        this.thisArgs = this.createStack();
+        this.thisTypes = this.createStack();
     }
 
     indent(code: string): string {
@@ -49,9 +54,41 @@ export class Generator extends ASTManipulator {
         return '"' + value.replaceAll('"', '\\"').replaceAll('\n', '\\n') + '"';
     }
 
+    property(prop: b.Expression | b.PrivateName): [string, t.String | t.Symbol | t.Any] {
+        if (prop.type === 'Identifier') {
+            return [this.string(prop.name), t.string];
+        }
+        let type = this.infer.expression(prop);
+        let out = this.expression(prop);
+        switch (type.type) {
+            case 'undefined':
+            case 'null':
+                return [`(${out}, "${type.type}")`, t.string];
+            case 'boolean':
+                return [`(${out} ? "true" : "false")`, t.string];
+            case 'number':
+                return [`number_to_string(${out}, 10)`, t.string];
+            case 'string':
+            case 'symbol':
+                return [out, type];
+            case 'object':
+                return [`any_to_property_key(object_to_primitive(${out}))`, t.any];
+            case 'array':
+                return [`array_to_string(${out})`, t.string];
+            default:
+                return [`any_to_property_key(${out})`, t.any];
+        }
+    }
+
     type(type: Type, name?: string, decl: boolean = false): string {
         if (type.type === 'object' && type.call) {
-            return this.type(type.call.returnType) + ' ' + (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(object* this, ' + type.call.params.map(param => this.type(param[1], param[0])).join(', ') + ')';
+            let out = this.type(type.call.returnType) + ' ';
+            out += (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(';
+            if (!type.call.noThis) {
+                out += 'object* this, ';
+            }
+            out += type.call.params.map(param => this.type(param[1], param[0])).join(', ') + ')';
+            return out;
         } else {
             let out = TYPES[type.type];
             if (name) {
@@ -113,8 +150,17 @@ export class Generator extends ASTManipulator {
             case 'Identifier':
                 return this.expression(node) + ' = ' + value;
             case 'MemberExpression':
-                let prop = node.property.type === 'Identifier' ? node.property.name : this.expression(node.property);
-                return 'set(' + this.expression(node.object) + ', ' + prop +')';
+                let [prop, type] = this.property(node.property);
+                let obj = this.expression(node.object);
+                let objType = this.infer.expression(node.object);
+                switch (objType.type) {
+                    case 'object':
+                        return `set_object_${type}(${obj}, ${prop})`;
+                    case 'any':
+                        return `set_any_${type}(${obj}, ${prop})`;
+                    default:
+                        this.error('TypeError', `Cannot set properties of ${type.type} (setting ${prop}`);                    
+                }
             default:
                 this.error('InternalError', `Complicated lvalue encountered in Generator.assignment() of type ${node.type}`)
         }
@@ -122,7 +168,8 @@ export class Generator extends ASTManipulator {
 
     expression(node: b.Expression | b.PrivateName | b.V8IntrinsicIdentifier): string {
         this.setSourceData(node);
-        let func: string;
+        let prop: string;
+        let type: Type;
         switch (node.type) {
             case 'Identifier':
                 return this.identifier(node.name);
@@ -181,7 +228,7 @@ export class Generator extends ASTManipulator {
                         if (prop.type === 'SpreadElement') {
                             this.error('SyntaxError', 'Spread elements are not supported');
                         } else {
-                            let key = prop.key.type === 'Identifier' ? this.string(prop.key.name) : this.expression(prop.key);
+                            let [key, type] = this.property(prop.key);
                             if (prop.type === 'ObjectMethod') {
                                 return key + ', ' + this.function(prop);
                             } else {
@@ -208,9 +255,29 @@ export class Generator extends ASTManipulator {
                 return this.assignment(node.left, this.expression(node.right));
             case 'MemberExpression':
             case 'OptionalMemberExpression':
-                let prop = node.property.type === 'Identifier' ? this.string(node.property.name) : this.expression(node.property);
-                func = node.type === 'MemberExpression' ? 'get' : 'optional_get';
-                return `${func}(${this.expression(node.object)}, to_property_key(${prop}))`;
+                [prop, type] = this.property(node.property);
+                let obj = this.expression(node.object);
+                let objType = this.infer.expression(node.object);
+                if (objType.type === 'undefined' || objType.type === 'null') {
+                    if (node.type === 'OptionalMemberExpression') {
+                        return `(${prop}, ${obj})`;
+                    } else {
+                        this.error('TypeError', `Cannot read properties of ${objType.type} (reading ${prop})`);
+                    }
+                } else if (objType.type === 'any' && node.type === 'OptionalMemberExpression') {
+                    return `optional_get_any_${type.type}(${obj}, ${prop})`;
+                } else if (objType.type === 'string' && prop === '"length"') {
+                    return `strlen(${obj})`;
+                } else if (objType.type === 'array' && prop === '"length"') {
+                    return `(${obj}->length)`;
+                } else {
+                    let outType = this.infer.expression(node);
+                    if (outType.type === 'object' && outType.call && outType.call.cName) {
+                        return outType.call.cName;
+                    } else {
+                        return `get_${objType.type}_${type.type}(${obj}, ${prop})`;
+                    }
+                }
             case 'BindExpression':
                 this.error('SyntaxError', 'Bind expressions are not supported');
             case 'ConditionalExpression':
@@ -225,6 +292,7 @@ export class Generator extends ASTManipulator {
                         return this.expression(arg as b.Expression);
                     }
                 });
+                let func: string;
                 if (node.callee.type === 'Identifier') {
                     func = this.expression(node.callee);
                     if (func.startsWith('js_variable')) {
@@ -235,28 +303,54 @@ export class Generator extends ASTManipulator {
                 } else {
                     func = this.expression(node.callee);
                 }
-                let type = this.infer.expression(node.callee);
-                if ('call' in type && typeof type.call !== 'function') {
-                    let call = type.call;
-                    if (call) {
-                        args = args.map((arg, i) => {
-                            if (this.type(call.params[i][1]) === 'any*') {
-                                return 'create_any(' + arg + ')';
-                            } else {
-                                return arg;
-                            }
-                        });
-                    }
-                }
                 if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
-                    if (node.callee.type === 'MemberExpression') {
-                        let macro = node.type === 'OptionalCallExpression' ? 'optional_call_method' : 'call_method';
-                        return macro + '(' + this.expression(node.callee.object) + ', to_property_key(' + (node.callee.property.type === 'Identifier' ? this.string(node.callee.property.name) : this.expression(node.callee.property)) + '), ' + this.type((this.infer.expression(node.callee) as t.Object & {call: t.CallData}).call.returnType) + ', ' + args.join(', ') + ')';
-                    } else if (node.type === 'OptionalCallExpression') {
-                        return 'optional_call(' + func + ', NULL, ' + args.join(', ') + ')';
-                    } else {
-                        return func + '(NULL, ' + args.join(', ') + ')';
+                    let funcType = this.infer.expression(node.callee);
+                    if (funcType.type === 'any') {
+                        this.error('TypeError', 'Cannot call expression of type any, cast to a type first.');
+                    } else if (node.type === 'OptionalCallExpression' && (funcType.type === 'undefined' || funcType.type === 'null')) {
+                        return func;
+                    } else if (funcType.type !== 'object') {
+                        this.error('TypeError', `Value of type ${funcType.type} is not callable`);
+                    } else if (funcType.call === null) {
+                        this.error('TypeError', 'Is not callable');
                     }
+                    let call = funcType.call;
+                    let argsArray: string[] = [];
+                    if (!call.noThis) {
+                        if (node.callee.type === 'MemberExpression') {
+                            this.thisArgs.push(this.expression(node.callee.object));
+                            this.thisTypes.push(this.infer.expression(node.callee.object));
+                        }
+                        argsArray.push(this.thisArgs.value ?? 'NULL');
+                    }
+                    argsArray.push(...node.arguments.map((arg, i) => {
+                        if (call.params[i] === undefined) {
+                            return;
+                        }
+                        if (arg.type === 'SpreadElement') {
+                            this.error('SyntaxError', 'Spread elements are not supported');
+                        } else if (arg.type === 'ArgumentPlaceholder') {
+                            this.error('InternalError', 'This error should not occur (ArgumentPlaceholder node found)');
+                        }
+                        let out = this.expression(arg);
+                        let type = this.infer.expression(arg);
+                        if (type.type === 'undefined' && call.params[i][2]) {
+                            out = '(' + out + ', ' + this.expression(call.params[i][2]) + ')';
+                        }
+                        if (type.type === 'array' && call.thisIsAnyArray) {
+                            if (Array.isArray(type.elts)) {
+                                if (type.elts.length === 0) {
+                                    out = 'create_array(0)';
+                                } else {
+                                    out = `create_array(${type.elts.length}, ${type.elts.map((type, i) => this.cast.toAny(`out->items[${i}]`, type.type)).join(', ')})`;
+                                }
+                            } else {
+                                out = `cast_array_to_any_array(${out}, ${this.string(type.elts.type)})`;
+                            }
+                        }
+                        return this.cast.to(out, type, call.params[i][1]);
+                    }).filter(x => x !== undefined));
+                    return '((' + this.type(funcType) + ')' + this.expression(node.callee) + ')(' + argsArray.join(', ') + ')';
                 } else {
                     let proto = node.callee.type === 'Identifier' ? 'js_variable_' + this.id + '_' + node.callee.name : this.expression(node.callee);
                     return 'new(' + func + ', get(' + proto + ', "prototype"), ' + args + ')';

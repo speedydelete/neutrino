@@ -1,6 +1,6 @@
 
+#include <stdio.h>
 #include "../core/object.h"
-#include "console.h"
 
 object* js_global_console;
 
@@ -26,6 +26,10 @@ char* console_input(char* prompt) {
     return out;
 }
 
-void init_console() {
-    js_global_console = create_object(NULL, 2, "log", console_log, "input", console_input);
+void init_console(void) {
+    js_global_console = create_object(object_prototype, 3,
+        "log", console_log,
+        "input", console_input,
+        "printf", printf
+    );
 }

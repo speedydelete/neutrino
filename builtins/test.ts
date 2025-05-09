@@ -1,3 +1,3 @@
-/// <reference path="index.d.ts" />
 
-console.log('hi');
+let name = console.input('enter name: ');
+console.log('hi, ' + name);

@@ -179,3 +179,21 @@ bool delete_object_symbol(object* obj, symbol key) {
     }
     return false;
 }
+
+
+object* object_prototype;
+
+char* object_prototype_toString(object* this) {
+    return "[object Object]";
+}
+
+object* object_prototype_valueOf(object* this) {
+    return this;
+}
+
+void init_object(void) {
+    object_prototype = create_object(NULL, 2,
+        "toString", object_prototype_toString,
+        "valueOf", object_prototype_valueOf
+    );
+}

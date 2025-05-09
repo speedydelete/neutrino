@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <gc.h>
+#include </home/speedy/code/windows-libgc/include/gc.h>
 #include "util.h"
 
 

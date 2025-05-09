@@ -183,3 +183,52 @@ bool any_to_boolean(any* value) {
             return true;
     }
 }
+
+
+bool equal(any* a, any* b) {
+    if (a->type == UNDEFINED_TAG || a->type == NULL_TAG || b->type == UNDEFINED_TAG || b->type == NULL_TAG) {
+        return true;
+    } else if (a->type == SYMBOL_TAG || b->type == SYMBOL_TAG) {
+        return a->type == SYMBOL_TAG && b->type == SYMBOL_TAG && a->symbol == b->symbol;
+    } else if ((a->type == OBJECT_TAG || a->type == ARRAY_TAG) && (b->type == OBJECT_TAG || b->type == OBJECT_TAG)) {
+        return a->object == b->object;
+    } else if (a->type == STRING_TAG || b->type == STRING_TAG) {
+        return strcmp(any_to_string(a), any_to_string(b)) == 0;
+    } else {
+        return a->number == b->number;
+    }
+}
+
+bool strict_equal(any* a, any* b) {
+    if (a->type != b->type) {
+        return false;
+    } else if (a->type == UNDEFINED_TAG || a->type == NULL_TAG) {
+        return true;
+    } else if (a->type == STRING_TAG) {
+        return strcmp(a->string, b->string) == 0;
+    } else {
+        return a->object == b->object;
+    }
+}
+
+bool same_value(any* a, any* b) {
+    if (a->type == NUMBER_TAG && b->type == NUMBER_TAG) {
+        double x = a->number;
+        double y = b->number;
+        if (x != x && y != y) {
+            return true;
+        } else if (x == 0 && y == 0) {
+            return signbit(x) == signbit(y);
+        }
+    }
+    return strict_equal(a, b);
+}
+
+bool same_value_zero(any* a, any* b) {
+    if (a->type == NUMBER_TAG && b->type == NUMBER_TAG) {
+        if (a->number != a->number && b->number != b->number) {
+            return true;
+        }
+    }
+    return strict_equal(a, b);
+}

@@ -10,6 +10,10 @@ char* string_toString(char* this) {
     return this;
 }
 
+char* string_valueOf(char* this) {
+    return this;
+}
+
 char* string_at(char* this, double index) {
     if (index < 0) {
         index += strlen(this);
@@ -302,6 +306,8 @@ void* get_string_string(char* value, char* key) {
         return out;
     } else if (strcmp(key, "toString") == 0) {
         return string_toString;
+    } else if (strcmp(key, "valueOf") == 0) {
+        return string_valueOf;
     } else if (strcmp(key, "at") == 0) {
         return string_at;
     } else if (strcmp(key, "charAt") == 0) {

@@ -2,16 +2,13 @@
 #include <inttypes.h>
 #include <math.h>
 #include "../core/util.h"
+#include "../core/types.h"
 
 
 object* js_global_Math;
 
 double math_clz32(double x) {
     return (double)__builtin_clz((uint32_t)x);
-}
-
-double math_f16round(double x) {
-    return (double)(__fp16)(x);
 }
 
 double math_fround(double x) {
@@ -25,7 +22,7 @@ double math_imul(double x, double y) {
 double math_max(array* items) {
     double out = -INFINITY;
     for (int i = 0; i < items->length; i++) {
-        double x = cast_any_to_number(items[i]);
+        double x = any_to_number(items->items[i]);
         if (x > out) {
             out = x;
         }
@@ -36,7 +33,7 @@ double math_max(array* items) {
 double math_min(array* items) {
     double out = INFINITY;
     for (int i = 0; i < items->length; i++) {
-        double x = cast_any_to_number(items->items[i]);
+        double x = any_to_number(items->items[i]);
         if (x < out) {
             out = x;
         }
@@ -51,8 +48,8 @@ double math_random() {
     }
     uint64_t rand_uint64;
     if (fread(&rand_uint64, sizeof(rand_uint64), 1, urandom) != 1) {
-        perror("InternalError: read from /dev/urandom failed");
         fclose(urandom);
+        throw("InternalError: read from /dev/urandom failed");
     }
     fclose(urandom);
     return (double)rand_uint64 / (double)UINT64_MAX;
@@ -74,9 +71,9 @@ double math_sign(double value) {
     return value > 0 ? 1 : (value < 0 ? -1 : 0);
 }
 
-void init_math() {
+void init_math(void) {
     double E = exp(1);
-    js_global_Math = create_object(NULL, 1,
+    js_global_Math = create_object(object_prototype, 1,
         "E", E,
         "LN10", log(10),
         "LN2", log(2),
@@ -99,7 +96,6 @@ void init_math() {
         "exp", exp,
         "expm1", expm1,
         "floor", floor,
-        "f16round", math_f16round,
         "fround", math_fround,
         "hypot", hypot,
         "imul", math_imul,

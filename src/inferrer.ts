@@ -1,27 +1,20 @@
 
 import * as b from '@babel/types';
+import * as parser from '@babel/parser';
 import * as t from './types';
 import {Type} from './types';
-import {ASTManipulator} from './util';
+import {Stack, Scope, ASTManipulator} from './util';
 
 
 export class Inferrer extends ASTManipulator {
 
-    thisType: Type = t.undefined;
-    thisTypes: Type[] = [];
-    superTypes: Type[] = [];
+    thisTypes: Stack<Type>;
+    superTypes: Stack<Type>;
 
-    pushThisType(type: Type): void {
-        this.thisTypes.push(type);
-        this.thisType = type;
-    }
-
-    popThisType(): void {
-        let newType = this.thisTypes.pop();
-        if (!newType) {
-            this.error('InternalError', 'Attempting to pop thisType stack with no previous thisType');
-        }
-        this.thisType = newType;
+    constructor(fullPath: string, raw: string, scope?: Scope) {
+        super(fullPath, raw, scope);
+        this.thisTypes = this.createStack();
+        this.superTypes = this.createStack();
     }
 
     property(node: b.Expression | b.PrivateName): PropertyKey | Type {
@@ -38,8 +31,22 @@ export class Inferrer extends ASTManipulator {
                 this.error('SyntaxError', 'Parameter properties are not supported');
             } else if (param.type === 'AssignmentPattern') {
                 outParams.push([this.getRaw(param.left), this.type(param.typeAnnotation), param.right]);
+            } else if (param.type === 'Identifier') {
+                let out: t.Parameter = [param.name, this.type(param.typeAnnotation), null];
+                if (param.trailingComments && param.trailingComments.length > 0) {
+                    for (let comment of param.trailingComments) {
+                        let data = comment.value;
+                        for (let cmd of data.split(',')) {
+                            cmd = cmd.trim();
+                            if (cmd.startsWith('= ')) {
+                                out[2] = parser.parseExpression(data.slice(2));
+                            }
+                        }
+                    }
+                }
+                outParams.push(out);
             } else {
-                outParams.push([this.getRaw(param), this.type(param.typeAnnotation), null]);
+                this.error('SyntaxError', 'Parameter destructuring is not supported');
             }
         }
         if (!obj) {
@@ -57,26 +64,62 @@ export class Inferrer extends ASTManipulator {
         return obj;
     }
 
+    callComments(comments: b.Comment[], call: t.CallData | null): void {
+        if (!call) {
+            this.error('InternalError', 'call is null');
+        }
+        for (let comment of comments) {
+            for (let cmd of comment.value.split(',')) {
+                cmd = cmd.trim();
+                if (cmd === 'no this') {
+                    call.noThis = true;
+                } else if (cmd.startsWith('c = ')) {
+                    call.cName = cmd.slice(4);
+                } else if (cmd === 'this is any[]') {
+                    call.thisIsAnyArray = true;
+                }
+            }
+        }
+    }
+
     objectType(nodes: b.TSTypeElement[]): t.Object {
         let out = t.object();
         for (let prop of nodes) {
             this.setSourceData(prop);
+            if (prop.leadingComments && prop.leadingComments.length > 0) {
+                let ignored = false;
+                for (let comment of prop.leadingComments) {
+                    if (comment.value === 'neutrino ignore') {
+                        ignored = true;
+                    }
+                }
+                if (ignored) {
+                    continue;
+                }
+            }
             if (prop.type === 'TSPropertySignature') {
                 if (prop.key.type !== 'Identifier') {
-                    this.error('SyntaxError', 'Type literal keys must not be computed');
+                    this.error('SyntaxError', 'Type literal keys cannot be computed');
                 }
                 out.props[prop.key.name] = this.type(prop.typeAnnotation);
             } else if (prop.type === 'TSMethodSignature') {
                 if (prop.key.type !== 'Identifier') {
-                    this.error('SyntaxError', 'Type literal keys must not be computed');
+                    this.error('SyntaxError', 'Type literal keys cannot be computed');
                 }
                 if (prop.kind === 'get') {
                     out.props[prop.key.name] = this.type(prop.typeAnnotation);
                 } else if (prop.kind === 'method') {
-                    out.props[prop.key.name] = this.function(prop.parameters, prop.typeAnnotation);
+                    let type = this.function(prop.parameters, prop.typeAnnotation);
+                    if (prop.leadingComments && prop.leadingComments.length > 0) {
+                        this.callComments(prop.leadingComments, type.call);
+                    }
+                    out.props[prop.key.name] = type;
                 }
             } else if (prop.type === 'TSCallSignatureDeclaration') {
                 this.function(prop.parameters, prop.typeAnnotation, out);
+                if (prop.leadingComments && prop.leadingComments.length > 0) {
+                    this.callComments(prop.leadingComments, out.call);
+                }
             } else if (prop.type === 'TSIndexSignature') {
                 let valueType = this.type(prop.typeAnnotation);
                 for (let param of prop.parameters) {
@@ -84,7 +127,7 @@ export class Inferrer extends ASTManipulator {
                     if (!(type.type === 'string' || type.type === 'number' || type.type === 'symbol')) {
                         this.error('TypeError', `Type ${type} cannot be used as an index type`);
                     }
-                    out.indexes[type.type] = type;
+                    out.indexes[type.type] = valueType;
                 }
             }
         }
@@ -125,7 +168,7 @@ export class Inferrer extends ASTManipulator {
             case 'TSObjectKeyword':
                 return t.object();
             case 'TSThisType':
-                return this.thisType ?? t.undefined;
+                return this.thisTypes.value ?? t.undefined;
             case 'TSLiteralType':
                 let x = node.literal;
                 this.setSourceData(x);
@@ -149,7 +192,11 @@ export class Inferrer extends ASTManipulator {
                 return this.objectType(node.members);
             case 'TSFunctionType':
             case 'TSConstructorType':
-                return this.function(node.parameters, node.typeAnnotation);
+                let type = this.function(node.parameters, node.typeAnnotation);
+                if (node.leadingComments && node.leadingComments.length > 0) {
+                    this.callComments(node.leadingComments, type.call);
+                }
+                return type;
             case 'TSUnionType':
                 return t.union(node.types.map(x => this.type(x)));
             case 'TSIntersectionType':
@@ -288,17 +335,16 @@ export class Inferrer extends ASTManipulator {
                     this.error('SyntaxError', 'Class property keys cannot be computed');
                 }
                 let type: Type;
+                this.thisTypes.push(prop.static ? variable : inst);
                 if (prop.type === 'ClassProperty') {
-                    this.pushThisType(prop.static ? variable : inst);
                     type = this.type(prop.typeAnnotation);
-                    this.popThisType();
                 } else if (prop.type === 'ClassMethod') {
-                    this.pushThisType(prop.static ? variable : inst);
                     type = this.function(prop.params, prop.returnType, inst);
-                    this.popThisType();
                 } else {
+                    this.thisTypes.pop();
                     continue;
                 }
+                this.thisTypes.pop();
                 if (prop.static) {
                     variable.props[prop.key.name] = type;
                 } else {
@@ -307,7 +353,7 @@ export class Inferrer extends ASTManipulator {
             } else if (prop.type === 'StaticBlock') {
                 this.error('SyntaxError', 'Static blocks are not supported');
             } else {
-                this.pushThisType(prop.static ? variable : inst);
+                this.thisTypes.push(prop.static ? variable : inst);
                 let type = this.type(prop.typeAnnotation);
                 for (let param of prop.parameters) {
                     let indexType = this.type(param.typeAnnotation);
@@ -316,7 +362,7 @@ export class Inferrer extends ASTManipulator {
                     }
                     inst.indexes[indexType.type] = type;
                 }
-                this.popThisType();
+                this.thisTypes.pop();
             }
         }
         if (node.superClass) {
@@ -352,11 +398,11 @@ export class Inferrer extends ASTManipulator {
             case 'DecimalLiteral':
                 this.error('SyntaxError', 'Decimal literals are not supported');
             case 'Super':
-                return this.superTypes[this.superTypes.length - 1];
+                return this.superTypes.value ?? t.undefined;
             case 'Import':
                 return t.function([['module', t.string, null], ['options', t.object({with: t.object({}, null, {string: t.string})}), null]], t.any);
             case 'ThisExpression':
-                return this.thisType;
+                return this.thisTypes.value ?? t.undefined;
             case 'ArrowFunctionExpression':
                 return this.function(node.params, node.returnType);
             case 'YieldExpression':
@@ -473,6 +519,10 @@ export class Inferrer extends ASTManipulator {
                     case 'in':
                     case 'instanceof':
                         return t.boolean;
+                    case '+':
+                        let left = this.expression(node.left);
+                        let right = this.expression(node.right);
+                        return left.type === 'string' || right.type === 'string' ? t.string : t.number;
                     case '|>':
                         this.error('SyntaxError', 'The pipeline operator is not supported');
                     default:
@@ -661,7 +711,14 @@ export class Inferrer extends ASTManipulator {
         } else if (node.type === 'TSTypeAliasDeclaration') {
             this.scope.setType(node.id.name, this.type(node.typeAnnotation));
         } else if (node.type === 'TSInterfaceDeclaration') {
+            this.pushScope();
+            if (node.typeParameters) {
+                for (let param of node.typeParameters.params) {
+                    this.setTypeVar(param.name, param.constraint ? this.type(param.constraint) : t.any);
+                }
+            }
             let type = this.objectType(node.body.body);
+            this.popScope();
             if (this.typeVarExists(node.id.name)) {
                 t.objectAssign(this.getTypeVar(node.id.name) as t.Object, type);
             } else {

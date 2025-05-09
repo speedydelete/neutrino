@@ -58,6 +58,39 @@ export class CompilerError extends Error {
 }
 
 
+export class Stack<T> {
+
+    values: T[];
+    sourceData: SourceData;
+    
+    constructor(values: T[] = [], sourceData: SourceData) {
+        this.values = values;
+        this.sourceData = sourceData;
+    }
+
+    get value(): T | undefined {
+        return this.values[this.values.length - 1];
+    }
+
+    get length(): number {
+        return this.values.length;
+    }
+
+    push(value: T): void {
+        this.values.push(value);
+    }
+
+    pop(): T {
+        let out = this.values.pop();
+        if (out === undefined) {
+            throw new CompilerError('InternalError', 'Nothing to pop', this.sourceData);
+        }
+        return out;
+    }
+
+}
+
+
 export class Scope {
 
     parent: Scope | null;
@@ -170,6 +203,10 @@ export class ASTManipulator {
         this.scope = scope ?? new Scope(GLOBAL_SCOPE);
     }
 
+    createStack<T>(values: T[] = []): Stack<T> {
+        return new Stack(values, this.sourceData);
+    }
+
     newConnectedSubclass<T extends typeof ASTManipulator>(subclass: T): InstanceType<T> {
         let out = new subclass(this.fullPath, this.raw, this.scope);
         out.sourceData = this.sourceData;
@@ -266,8 +303,18 @@ export class ASTManipulator {
 
     getProp(type: Type, key: PropertyKey | Type): Type {
         switch (type.type) {
-            case 'any':
-                return t.any;
+            case 'undefined':
+                this.error('TypeError', `Cannot read properties of undefined (reading ${String(key)})`);
+            case 'null':
+                this.error('TypeError', `Cannot read properties of null (reading ${String(key)})`);
+            case 'boolean':
+                return this.getProp(this.getGlobalTypeVar('Boolean'), key);
+            case 'number':
+                return this.getProp(this.getGlobalTypeVar('Number'), key);
+            case 'string':
+                return this.getProp(this.getGlobalTypeVar('String'), key);
+            case 'symbol':
+                return this.getProp(this.getGlobalTypeVar('Symbol'), key);
             case 'object':
                 if (typeof key !== 'object') {
                     return type.props[key] ?? t.undefined;
@@ -284,20 +331,18 @@ export class ASTManipulator {
                 } else {
                     this.error('TypeError', `Type ${key.type} cannot be used as a property key`);
                 }
-            case 'undefined':
-                this.error('TypeError', `Cannot read properties of undefined (reading ${String(key)})`);
-            case 'null':
-                this.error('TypeError', `Cannot read properties of null (reading ${String(key)})`);
-            case 'boolean':
-                return this.getProp(this.getGlobalTypeVar('Boolean'), key);
-            case 'number':
-                return this.getProp(this.getGlobalTypeVar('Number'), key);
-            case 'string':
-                return this.getProp(this.getGlobalTypeVar('String'), key);
-            case 'symbol':
-                return this.getProp(this.getGlobalTypeVar('Symbol'), key);
+            case 'array':
+                if (typeof key === 'number') {
+                    if (Array.isArray(type.elts)) {
+                        return type.elts[key] ?? t.undefined;
+                    } else {
+                        return type.elts;
+                    }
+                } else {
+                    return this.getProp(this.getGlobalTypeVar('Array'), key);
+                }
             default:
-                this.error('InternalError', `Invalid type: ${type}`)
+                return t.any;
         }
     }
 

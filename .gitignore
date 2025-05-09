@@ -1,6 +1,5 @@
 /node_modules
 /lib
-/main
-/main.c
+/main*
 *.out
 *.o
