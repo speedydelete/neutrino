@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <math.h>
-#include </home/speedy/code/windows-libgc/include/gc.h>
+#include <gc.h>
 
 #define JS_NULL (void**)NULL
 #define NaN (double)NAN
