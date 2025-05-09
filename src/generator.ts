@@ -434,10 +434,18 @@ export class Generator extends ASTManipulator {
             case 'DoWhileStatement':
                 return 'do ' + this.statement(node.body) + ' while (' + this.expression(node.test) + ');\n';
             case 'ForStatement':
+                this.pushScope();
                 out = 'for (';
                 if (node.init) {
                     if (node.init.type === 'VariableDeclaration') {
                         out += this.statement(node.init).slice(0, -1) + ' ';
+                        for (let decl of node.init.declarations) {
+                            if (decl.id.type === 'Identifier') {
+                                let type = decl.init ? this.infer.expression(decl.init) : this.infer.type(decl.id.typeAnnotation);
+                                out = this.type(type) + ' ' + this.identifier(decl.id.name) + ';\n' + out;
+                                this.setVar(decl.id.name, type);
+                            }
+                        }
                     } else {
                         out += this.expression(node.init) + ' ';
                     }
@@ -449,6 +457,7 @@ export class Generator extends ASTManipulator {
                     out += this.expression(node.update);
                 }
                 out += ') ' + this.statement(node.body);
+                this.popScope();
                 return out;
             case 'ForInStatement':
             case 'ForOfStatement':

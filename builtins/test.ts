@@ -1,3 +1,6 @@
+let toReturn = "";
+let value = "Hello World";
 
-let name = console.input('enter name: ');
-console.log('hi, ' + name);
+for(let i = 0; i < value.length; i++){
+    console.log(value);
+}

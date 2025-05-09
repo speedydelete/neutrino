@@ -1,7 +1,7 @@
 
 CC = gcc # x86_64-w64-mingw32-gcc
 CFLAGS = -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-parameter -g # -I../windows-libgc/include/gc -L../windows-libgc/lib
-LDFLAGS = -lm libgc
+LDFLAGS = -lm -lgc
 
 SRCS = main.c ./builtins/index.c $(wildcard ./builtins/core/*.c) $(wildcard ./builtins/globals/*.c)
 

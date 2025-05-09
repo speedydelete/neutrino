@@ -30,4 +30,9 @@ bool equal(any* a, any* b);
 bool strict_equal(any* a, any* b);
 bool same_value_zero(any* a, any* b);
 
+#define inc(x) ++x
+#define dec(x) --x
+#define postfix_inc(x) x++
+#define postfix_dec(x) x--
+
 #endif
