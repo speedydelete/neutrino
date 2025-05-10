@@ -5,4 +5,3 @@ export * from './util';
 export * from './inferrer';
 export * from './caster';
 export * from './generator';
-export * from '.';
