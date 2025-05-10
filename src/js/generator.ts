@@ -2,7 +2,7 @@
 import type * as b from '@babel/types';
 import * as t from './types';
 import {Type} from './types';
-import {Inferrer} from '../inferrer';
+import {Inferrer} from './inferrer';
 import {Caster} from './caster';
 import {Stack, Scope, ASTManipulator} from './util';
 
