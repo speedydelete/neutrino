@@ -8,10 +8,6 @@ import {Generator} from './generator.js';
 
 
 
-let globalDTS = fs.readFileSync('builtins/index.d.ts').toString();
-GLOBAL_SCOPE.set('undefined', t.undefined);
-(new Inferrer('builtins/index.d.ts', globalDTS, GLOBAL_SCOPE)).program(parser.parse(globalDTS, {sourceFilename: 'index.d.ts', plugins: [['typescript', {dts: true}]]}).program);
-
 
 export interface CompilerOptions {
     filename?: string;

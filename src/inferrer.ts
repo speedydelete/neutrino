@@ -17,6 +17,10 @@ export class Inferrer extends ASTManipulator {
         this.superTypes = this.createStack();
     }
 
+    getImportType(path: string, attrs?: t.Object): Type {
+        return t.any;
+    }
+
     property(node: b.Expression | b.PrivateName): PropertyKey | Type {
         return node.type === 'Identifier' ? node.name : this.expression(node);
     }
@@ -669,8 +673,7 @@ export class Inferrer extends ASTManipulator {
         } else if (node.type === 'ClassDeclaration') {
             this.class(node);
         } else if (node.type === 'ImportDeclaration') {
-            // let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
-            let ns = t.any;
+            let ns = this.getImportType(node.source.value, this.importAttributes(node.attributes));
             for (let spec of node.specifiers) {
                 if (spec.type === 'ImportSpecifier') {
                     this.setLValue(spec.local, this.getProp(ns, this.importSpecifier(spec.imported)));
@@ -691,8 +694,7 @@ export class Inferrer extends ASTManipulator {
                     }
                 }
             } else {
-                // let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
-                let ns = t.any;
+                let ns = this.getImportType(node.source.value, this.importAttributes(node.attributes));
                 for (let spec of node.specifiers) {
                     let name = this.importSpecifier(spec.exported);
                     if (spec.type === 'ExportSpecifier') {
@@ -704,13 +706,13 @@ export class Inferrer extends ASTManipulator {
             }
         } else if (node.type === 'ExportDefaultDeclaration') {
             this.scope.exportDefault(this.expression(node.declaration));
-        // } else if (node.type === 'ExportAllDeclaration') {
-        //     let ns = getImportType(this.fullPath, node.source.value, this.importAttributes(node.attributes));
-        //     if (ns.type === 'object') {
-        //         for (let key in ns.props) {
-        //             this.scope.export(key, undefined, ns.props[key]);
-        //         }
-        //     }
+        } else if (node.type === 'ExportAllDeclaration') {
+            let ns = this.getImportType(node.source.value, this.importAttributes(node.attributes));
+            if (ns.type === 'object') {
+                for (let key in ns.props) {
+                    this.export(key, undefined, ns.props[key]);
+                }
+            }
         } else if (node.type === 'TSTypeAliasDeclaration') {
             this.scope.setType(node.id.name, this.type(node.typeAnnotation));
         } else if (node.type === 'TSInterfaceDeclaration') {

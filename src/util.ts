@@ -19,26 +19,26 @@ export class CompilerError extends Error {
 
     type: string;
 
-    raw: string;
-    rawLine: string;
-    file: string;
-    line: number;
-    col: number;
+    src: (SourceData & {rawLine: string}) | null;
 
-    constructor(type: string, message: string, src: SourceData) {
+    constructor(type: string, message: string, src: SourceData | null) {
         super(message);
         this.type = type;
-        this.raw = src.raw;
-        this.rawLine = src.fullRaw.split('\n')[src.line - 1];
-        this.file = src.file;
-        this.line = src.line;
-        this.col = src.col;
+        if (!src) {
+            this.src = src;
+        } else {
+            this.src = Object.assign({}, src, {rawLine: src.fullRaw.split('\n')[src.line - 1]});
+        }
     }
 
     toString(): string {
-        let out = `${this.type}: ${this.message} (at ${this.file}:${this.line}:${this.col})\n`;
-        out += '    ' + this.rawLine + '\n';
-        out += '    ' + ' '.repeat(this.col) + '^'.repeat(this.raw.length) + ' (here)';
+        let src = this.src;
+        if (!src) {
+            return `${this.type}: ${this.message}`;
+        }
+        let out = `${this.type}: ${this.message} (at ${src.file}:${src.line}:${src.col})\n`;
+        out += '    ' + src.rawLine + '\n';
+        out += '    ' + ' '.repeat(src.col) + '^'.repeat(src.raw.length) + ' (here)';
         if (this.type === 'NeutrinoBugError') {
             out += '\n\nStack trace:\n' + this.stack;
         }
@@ -46,9 +46,13 @@ export class CompilerError extends Error {
     }
 
     toStringHighlighted(): string {
-        let out = `\x1b[91m${this.type}\x1b[0m: ${this.message} (at ${this.file}:${this.line}:${this.col})\n`;
-        out += '    ' + highlight(this.rawLine) + '\n';
-        out += '    ' + ' '.repeat(this.col) + '^'.repeat(this.raw.length) + ' (here)';
+        let src = this.src;
+        if (!src) {
+            return `${this.type}: ${this.message}`;
+        }
+        let out = `\x1b[91m${this.type}\x1b[0m: ${this.message} (at ${src.file}:${src.line}:${src.col})\n`;
+        out += '    ' + highlight(src.rawLine) + '\n';
+        out += '    ' + ' '.repeat(src.col) + '^'.repeat(src.raw.length) + ' (here)';
         if (this.type === 'NeutrinoBugError') {
             out += '\n\nStack trace:\n' + this.stack;
         }
@@ -96,7 +100,7 @@ export class Scope {
     parent: Scope | null;
     vars: Map<string, Type> = new Map();
     types: Map<string, Type> = new Map();
-    exports: {[key: string]: Type} = {};
+    exports: Map<string, Type> = new Map();
 
     constructor(parent?: Scope | null) {
         if (parent === undefined) {
@@ -146,14 +150,14 @@ export class Scope {
     }
 
     export(sourceData: SourceData, name: string, exported?: string, type?: Type): void {
-        if (name in this.exports) {
+        if (this.exports.has(name)) {
             throw new CompilerError('TypeError', `Cannot re-export ${name}`, sourceData);
         }
-        this.exports[exported ?? name] = type ?? this.get(sourceData, name);
+        this.exports.set(exported ?? name, type ?? this.get(sourceData, name));
     }
 
     exportDefault(type: Type): void {
-        this.exports.default = type;
+        this.exports.set('default', type);
     }
 
     globalExists(name: string): boolean {
