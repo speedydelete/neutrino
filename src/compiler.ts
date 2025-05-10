@@ -1,10 +1,10 @@
 
 import * as fs from 'node:fs';
 import * as parser from '@babel/parser';
-import * as t from './types';
-import {Scope, GLOBAL_SCOPE} from './util';
-import {Inferrer} from './inferrer';
-import {Generator} from './generator';
+import * as t from './types.js';
+import {Scope, GLOBAL_SCOPE} from './util.js';
+import {Inferrer} from './inferrer.js';
+import {Generator} from './generator.js';
 
 
 
@@ -37,5 +37,5 @@ export function compile(code: string, options: CompilerOptions = {}): string {
     if (options.dts) {
         (new Inferrer(filename, code, scope)).program(parser.parse(code, parserOptions).program);
     }
-    return (new Generator(filename, code, scope)).program(parser.parse(code, parserOptions).program);
+    return (new Generator('', filename, code, scope)).program(parser.parse(code, parserOptions).program);
 }

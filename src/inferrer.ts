@@ -1,9 +1,9 @@
 
 import * as b from '@babel/types';
 import * as parser from '@babel/parser';
-import * as t from './types';
-import {Type} from './types';
-import {Stack, Scope, ASTManipulator} from './util';
+import * as t from './types.js';
+import {Type} from './types.js';
+import {Stack, Scope, ASTManipulator} from './util.js';
 
 
 export class Inferrer extends ASTManipulator {
@@ -49,19 +49,22 @@ export class Inferrer extends ASTManipulator {
                 this.error('SyntaxError', 'Parameter destructuring is not supported');
             }
         }
+        let out: t.Object;
         if (!obj) {
             let ftype = this.getGlobalTypeVar('Function');
             if (ftype.type !== 'object') {
                 this.error('TypeError', 'Global type Function must be an object type');
             }
-            obj = t.copy(ftype);
+            out = t.copy(ftype);
+        } else {
+            out = obj;
         }
-        obj.call = {
+        out.call = {
             params: outParams,
             restParam,
             returnType: returnType ? this.type(returnType) : t.any,
         };
-        return obj;
+        return out;
     }
 
     callComments(comments: b.Comment[], call: t.CallData | null): void {

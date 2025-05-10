@@ -1,7 +1,7 @@
 
 import * as b from '@babel/types';
-import {Type} from './types';
-import {ASTManipulator} from './util';
+import {Type} from './types.js';
+import {ASTManipulator} from './util.js';
 
 
 export class Caster extends ASTManipulator {

@@ -1,8 +1,8 @@
 
 import type * as b from '@babel/types';
-import * as t from './types';
-import {Type} from './types';
-import {highlight} from './highlighter';
+import * as t from './types.js';
+import {Type} from './types.js';
+import {highlight} from './highlighter.js';
 
 
 export interface SourceData {

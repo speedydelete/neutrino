@@ -1,10 +1,10 @@
 
 import type * as b from '@babel/types';
-import * as t from './types';
-import {Type} from './types';
-import {Inferrer} from './inferrer';
-import {Caster} from './caster';
-import {Stack, Scope, ASTManipulator} from './util';
+import * as t from './types.js';
+import {Type} from './types.js';
+import {Inferrer} from './inferrer.js';
+import {Caster} from './caster.js';
+import {Stack, Scope, ASTManipulator} from './util.js';
 
 
 const TYPES = {
@@ -23,11 +23,9 @@ const TYPES = {
 
 export class Generator extends ASTManipulator {
 
-    static nextID: number = 0;
     static nextAnon: number = 0;
 
-    id: number;
-
+    id: string;
     infer: Inferrer;
     cast: Caster;
     importIncludes: string[] = [];
@@ -36,11 +34,11 @@ export class Generator extends ASTManipulator {
     thisArgs: Stack<string>;
     thisTypes: Stack<Type>;
 
-    constructor(fullPath: string, raw: string, scope?: Scope) {
+    constructor(id: string, fullPath: string, raw: string, scope?: Scope) {
         super(fullPath, raw, scope);
+        this.id = id;
         this.infer = this.newConnectedSubclass(Inferrer);
         this.cast = this.newConnectedSubclass(Caster);
-        this.id = Generator.nextID++;
         this.thisArgs = this.createStack();
         this.thisTypes = this.createStack();
     }
