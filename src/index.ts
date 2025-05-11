@@ -5,17 +5,18 @@ export {SourceData, CompilerError, Stack, Scope, GLOBAL_SCOPE, ASTManipulator} f
 export {Inferrer} from './inferrer.js';
 export {Caster} from './caster.js';
 export {Generator} from './generator.js';
-export {config, setConfig} from './config.js';
+export {config, setConfig, loadConfig} from './config.js';
 export {File, loadImport, loadFile} from './imports.js';
-export {transform, transformAll, compile, compileAll, compileDependancies, compilePath, compileBuiltins, transformAndCompileAll} from './compiler.js';
+export {transform, transformAll, compile, compileAll, compilePath, compileBuiltins, transformAndCompileAll} from './compiler.js';
 
+import {join} from 'node:path';
 import * as fs from 'node:fs';
 import * as parser from '@babel/parser';
 import {GLOBAL_SCOPE} from './util.js';
 import {Inferrer} from './inferrer.js';
 
 
-let globalDTS = fs.readFileSync(import.meta.dirname).toString();
+let globalDTS = fs.readFileSync(join(import.meta.dirname, '..', 'builtins/index.d.ts')).toString();
 let parsedGlobalDTS = parser.parse(globalDTS, {
     sourceFilename: 'index.d.ts',
     plugins: [['typescript', {dts: true}]],

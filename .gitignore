@@ -1,5 +1,8 @@
 /node_modules
 /lib
-/main*
-*.out
 *.o
+/test/node_modules
+/test/**/*.c
+/test/**/*.h
+/test/**/*.o
+/test/index

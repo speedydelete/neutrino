@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import {execSync} from 'node:child_process';
 import {Scope} from './util.js';
 import {Generator} from './generator.js';
-import {File, getID, loadFile} from './imports.js';
+import {File, loadFile, getImportTypeGetter, getImportPath} from './imports.js';
 import config, {Config, setConfig, getAbsPath} from './config.js';
 
 
@@ -13,7 +13,13 @@ export function transform(file: File, config_?: Config): {code: string, header: 
         setConfig(config_);
     }
     let scope = new Scope();
-    let gen = new Generator(getID(), file.path, file.code, scope);
+    let gen = new Generator(file.id, file.path, file.code, scope);
+    gen.infer.getImportType = getImportTypeGetter(file.path);
+    gen.getImportData = function(path: string) {
+        path = getImportPath(path, file.path);
+        let file_ = loadFile(path);
+        return [path, file_.id, file_.scope];
+    };
     let code = gen.program(file.ast);
     gen.scope = scope;
     return {
@@ -70,69 +76,72 @@ export function transformAll(config_?: Config): void {
         path = getAbsPath(path);
         let code = fs.readFileSync(path + '.c').toString();
         let body = '    init(argc, argv);\n' + ids.map(id => `    main_${id}();`);
-        fs.writeFileSync(path + '.c', code + `\n\nint main(char* argc, char** argv) {\n${body}\n}`);
+        fs.writeFileSync(path + '.c', code + `\n\nint main(int argc, char** argv) {\n${body}\n}`);
     }
 }
 
 
+function changeExtension(path: string, ext: string): string {
+    let dir = dirname(path);
+    path = path.slice(dir.length + 1);
+    if (path.startsWith('.')) {
+        path = path.slice(0, path.slice(1).indexOf('.'));
+    } else {
+        path = path.slice(0, path.indexOf('.'));
+    }
+    return join(dir, path) + ext;
+}
+
+let builtinPaths: string[] = [];
+
+function getBuiltinPaths(dir: string): void {
+    for (let _path of fs.readdirSync(dir)) {
+        let path = join(dir, _path);
+        if (fs.statSync(path).isDirectory()) {
+            getBuiltinPaths(path);
+        } else if (path.endsWith('.c')) {
+            builtinPaths.push(path);
+        }
+    }
+}
+getBuiltinPaths(join(import.meta.dirname, '../builtins'));
+
 export function compilePath(path: string, link: boolean = false): void {
     path = resolve(config.rootDir, path);
-    let options: string;
+    let options = path + ' ';
     if (link) {
-        let dir = dirname(path.slice(0, -2));
-        let file = path.slice(dir.length, -2);
-        if (file.startsWith('.')) {
-            file = file.slice(0, file.slice(1).indexOf('.'));
-        } else {
-            file = file.slice(0, file.indexOf('.'));
-        }
-        options = ' -o ' + file;
+        options += builtinPaths.map(path => changeExtension(path, '.o')).join(' ') + ' -o ' + changeExtension(path, '');
     } else {
-        options = ' -c -o ' + path.slice(0, -2) + '.o';
+        options += '-c -o ' + path.slice(0, -2) + '.o';
     }
-    execSync(`${config.cc} ${config.cflags} ${path} ${options}`);
+    execSync(`${config.cc} ${config.cflags} ${options} ${config.ldflags}`);
 }
 
 let compiledIds: string[] = [];
 
-export function compileDependancies(file: File): void {
+function _compile(file: File): void {
     if (compiledIds.includes(file.id)) {
         return;
     }
-    for (let dep of file.dependsOn) {
-        compileDependancies(dep);
-        compilePath(dep.path);
-    }
-    compilePath(file.path);
+    file.dependsOn.forEach(_compile);
+    compilePath(file.path + '.c', true);
     compiledIds.push(file.id);
 }
 
 export function compile(file: File): void {
     compiledIds = [];
-    file.dependsOn.forEach(compileDependancies);
-    compilePath(file.path, true);
+    _compile(file);
 }
 
 export function compileAll(): void {
     let files = config.files ?? getAllFiles();
     for (let path of files) {
-        compile(loadFile(path));
-    }
-}
-
-function _compileInDirectoryRecursive(dir: string): void {
-    for (let _path of fs.readdirSync(dir)) {
-        let path = join(dir, _path);
-        if (fs.statSync(path).isDirectory()) {
-            _compileInDirectoryRecursive(dir);
-        } else if (path.endsWith('.c')) {
-            compilePath(path);
-        }
+        _compile(loadFile(path));
     }
 }
 
 export function compileBuiltins(): void {
-    _compileInDirectoryRecursive(join(import.meta.dirname, import.meta.filename, '..', 'builtins'));
+    builtinPaths.forEach(path => compilePath(path));
 }
 
 export function transformAndCompileAll(config_?: Config): void {

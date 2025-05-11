@@ -1,19 +1,2 @@
 #!/bin/sh
-if [ -f main.c ]; then 
-    rm main.c
-fi
-node --enable-source-maps -e '
-try {
-    const fs = require("fs");
-    fs.writeFileSync("main.c", require("./lib").compile(fs.readFileSync("'$1'").toString(), "c", true));
-} catch (error) {
-    if ("toStringHighlighted" in error) {
-        console.error(error.toStringHighlighted());
-    } else {
-        console.error(error);
-    }
-    if (typeof error === "object" && error && "stack" in error) {
-        console.error(error.stack);
-    }
-    process.exit(1);
-}' && make
+node --enable-source-maps "$(dirname "$0")/../main.js"

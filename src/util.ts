@@ -100,7 +100,7 @@ export class Scope {
     parent: Scope | null;
     vars: Map<string, Type> = new Map();
     types: Map<string, Type> = new Map();
-    exports: Map<string, Type> = new Map();
+    exports: Map<string, [Type, string]> = new Map();
 
     constructor(parent?: Scope | null) {
         if (parent === undefined) {
@@ -153,11 +153,11 @@ export class Scope {
         if (this.exports.has(name)) {
             throw new CompilerError('TypeError', `Cannot re-export ${name}`, sourceData);
         }
-        this.exports.set(exported ?? name, type ?? this.get(sourceData, name));
+        this.exports.set(exported ?? name, [type ?? this.get(sourceData, name), name]);
     }
 
     exportDefault(type: Type): void {
-        this.exports.set('default', type);
+        this.exports.set('default', [type, 'default']);
     }
 
     globalExists(name: string): boolean {

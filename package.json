@@ -1,7 +1,7 @@
 {
-  "name": "neutrino-builder",
+  "name": "neutrino-compiler",
   "version": "0.1.0",
-  "description": "",
+  "description": "Web app compiler",
   "license": "MIT",
   "author": "speedydelete",
   "type": "module",
@@ -26,16 +26,16 @@
     "url": "git+https://github.com/speedydelete/neutrino.git"
   },
   "dependencies": {
-    "@babel/helper-string-parser": "^7.25.9",
-    "@babel/parser": "^7.26.10"
+    "@babel/parser": "^7.27.2"
   },
   "devDependencies": {
-    "@babel/types": "^7.26.10",
-    "@types/node": "^22.13.14",
-    "typescript": "^5.8.2"
+    "@babel/types": "^7.27.1",
+    "@types/node": "^22.15.17",
+    "typescript": "^5.8.3"
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc && ./bin/neutrino ./builtins/test.ts"
+    "test": "(cd test; ../bin/neutrino)",
+    "build-test": "npm run build && npm run test"
   }
 }

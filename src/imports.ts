@@ -1,5 +1,5 @@
 
-import {join, resolve} from 'node:path';
+import {join, resolve, dirname} from 'node:path';
 import * as fs from 'node:fs';
 import * as b from '@babel/types';
 import * as parser from '@babel/parser';
@@ -14,7 +14,7 @@ export interface File {
     path: string;
     type: string;
     id: string;
-    exports: Map<string, Type>;
+    exports: Map<string, [Type, string]>;
     dependsOn: File[];
     code: string;
     ast: b.Program;
@@ -31,6 +31,39 @@ export function getID(num?: number): string {
 }
 
 const FILES: Map<string, File> = new Map();
+
+export function getImportPath(path: string, relativeTo?: string): string {
+    if (path.startsWith('/') || path.startsWith('./') || path.startsWith('../')) {
+        if (relativeTo) {
+            path = resolve(dirname(relativeTo), path);
+        }
+        path = getAbsPath(path);
+    } else {
+        path = getAbsPath(join('node_modules', path));
+    }
+    let startPath = path;
+    if (!fs.existsSync(path)) {
+        let found = false;
+        for (let ext in config.fileTypes) {
+            path = startPath + ext;
+            if (fs.existsSync(path)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            throw new CompilerError('ImportError', `Cannot resolve import '${startPath}'`, null);
+        }
+    }
+    return path;
+}
+
+export function getImportTypeGetter(path: string): (importPath: string) => Type {
+    return function(importPath: string): Type {
+        let file = loadImport(importPath, path);
+        return t.object(Object.fromEntries(Array.from(file.exports).map(x => [x[0], x[1][0]])));
+    }
+}
 
 function getFile(path: string, type: string): File {
     let file = FILES.get(path);
@@ -68,10 +101,7 @@ function getFile(path: string, type: string): File {
     }
     let scope = new Scope();
     let inferrer = new Inferrer(path, code, scope);
-    inferrer.getImportType = function(importPath: string): Type {
-        let file = loadImport(join(path, importPath));
-        return t.object(Object.fromEntries(Array.from(file.exports)));
-    };
+    inferrer.getImportType = getImportTypeGetter(path);
     inferrer.program(ast);
     let dependsOn: File[] = [];
     for (let node of ast.body) {
@@ -103,34 +133,7 @@ function inferType(path: string): string {
 }
 
 export function loadImport(path: string, relativeTo?: string): File {
-    let startPath: string;
-    if (path.startsWith('/') || path.startsWith('./') || path.startsWith('../')) {
-        if (relativeTo) {
-            path = resolve(relativeTo, path);
-        }
-        startPath = getAbsPath(path);
-    } else {
-        startPath = getAbsPath(join('node_modules', path));
-    }
-    path = getPathFromRoot(startPath);
-    let type = '';
-    if (!fs.existsSync(path)) {
-        let found = false;
-        for (let [ext, type] of Object.entries(config.fileTypes)) {
-            path = startPath + ext;
-            if (fs.existsSync(path)) {
-                type = type;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            throw new CompilerError('ImportError', `Cannot resolve import '${path}'`, null);
-        }
-    } else {
-        type = inferType(path);
-    }
-    return getFile(getPathFromRoot(path), type);
+    return getFile(getImportPath(path, relativeTo), inferType(path));
 }
 
 export function loadFile(path: string): File {

@@ -85,10 +85,12 @@ export class Generator extends ASTManipulator {
             let out = this.type(type.call.returnType) + ' ';
             out += (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(';
             if (!type.call.noThis) {
-                out += 'object* this, ';
+                out += 'object* this';
             }
-            out += type.call.params.map(param => this.type(param[1], param[0])).join(', ') + ')';
-            return out;
+            if (type.call.params.length > 0) {
+                out += ', ' + type.call.params.map(param => this.type(param[1], param[0])).join(', ');
+            }
+            return out + ');';
         } else {
             let out = TYPES[type.type];
             if (name) {
@@ -97,7 +99,7 @@ export class Generator extends ASTManipulator {
             if (decl) {
                 out = 'extern ' + out;
             }
-            return out;
+            return out + ';';
         }
     }
 
@@ -169,7 +171,7 @@ export class Generator extends ASTManipulator {
         }
     }
 
-    expression(node: b.Expression | b.PrivateName | b.V8IntrinsicIdentifier): string {
+    expression(node: b.Expression | b.PrivateName | b.V8IntrinsicIdentifier | b.FunctionDeclaration | b.ClassDeclaration | b.TSDeclareFunction): string {
         this.setSourceData(node);
         let prop: string;
         let type: Type;
@@ -245,6 +247,7 @@ export class Generator extends ASTManipulator {
             case 'TupleExpression':
                 this.error('SyntaxError', 'Tuples are not supported');
             case 'FunctionExpression':
+            case 'FunctionDeclaration':
                 return this.function(node);
             case 'UnaryExpression':
                 return this.cast.unary(node.operator, this.expression(node.argument), this.infer.expression(node.argument).type);
@@ -372,6 +375,10 @@ export class Generator extends ASTManipulator {
             default:
                 this.error('InternalError', `Bad/unrecongnized AST node in Generator.statement() of type ${node.type}`);
         }
+    }
+
+    getImportData(path: string): [string, string, Scope] {
+        this.error('InternalError', 'This error should not occur');
     }
 
     statement(node: b.Statement): string {
@@ -503,6 +510,32 @@ export class Generator extends ASTManipulator {
                     }
                 }
                 return out;
+            case 'ImportDeclaration':
+                let [path, id, scope] = this.getImportData(node.source.value);
+                out = `#include "${path}"\n`;
+                for (let spec of node.specifiers) {
+                    if (spec.type === 'ImportNamespaceSpecifier') {
+                        this.error('SyntaxError', 'Namespace imports are not supported');
+                    }
+                    let name = this.identifier(spec.local.name);
+                    if (spec.type === 'ImportDefaultSpecifier') {
+                        out += `#define ${name} js_defaultexport_${id}`;
+                    } else {
+                        let export_ = scope.exports.get(this.infer.importSpecifier(spec.imported));
+                        if (!export_) {
+                            this.error('InternalError', 'Does not export');
+                        }
+                        let type = export_[0];
+                        let fv = type.type === 'object' && type.call ? 'function' : 'variable';
+                        out += `#define ${name} js_${fv}_${id}_${export_[1]}`;
+                    }
+                }
+                return out;
+            case 'ExportNamedDeclaration':
+                return '';
+            case 'ExportDefaultDeclaration':
+                this.topLevel += `js_defaultexport_${this.id} = ${this.expression(node.declaration)}`;
+                return `${this.type(this.infer.expression(node.declaration))} js_defaultexport_${this.id}`;
             default:
                 this.error('InternalError', `Bad/unrecongnized AST node in Generator.statement() of type ${node.type}`);
         }
@@ -529,7 +562,7 @@ export class Generator extends ASTManipulator {
         if (this.functions.length > 0) {
             out += this.functions.join('\n\n') + '\n\n';
         }
-        out += `void main_${this.id}(int argc, char** argv) {\n${this.indent(this.topLevel.slice(0, -1))}\n}\n`;
+        out += `void main_${this.id}() {\n${this.indent(this.topLevel.slice(0, -1))}\n}\n\n`;
         return out;
     }
 
