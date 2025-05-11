@@ -35,14 +35,15 @@ export type MatchingSchema<T extends Schema> =
     T extends {type: 'union'} ? MatchingSchema<T['schemas'][number]> :
     never;
 
-export type _SchemaFor<T> = 
+type SchemaForBase<T> = 
     T extends undefined ? {type: 'undefined'} :
     T extends null ? {type: 'null'} :
-    T extends boolean ? {type: 'boolean', value: undefined} :
-    T extends number ? {type: 'number', value: undefined} :
-    T extends string ? {type: 'string', value: undefined} :
-    T extends symbol ? {type: 'symbol', value: undefined} :
-    T extends bigint ? {type: 'bigint', value: undefined} :
+    boolean extends T ? {type: 'boolean', value: undefined} :
+    T extends boolean ? {type: 'boolean', value: T} :
+    T extends number ? {type: 'number', value: (number extends T ? undefined : T)} :
+    T extends string ? {type: 'string', value: (string extends T ? undefined : T)} :
+    T extends symbol ? {type: 'symbol', value: (symbol extends T ? undefined : T)} :
+    T extends bigint ? {type: 'bigint', value: (bigint extends T ? undefined : T)} :
     T extends [infer A] ? {type: 'array', elts: [A]} :
     T extends [infer A, infer B] ? {type: 'array', elts: [A, B]} :
     T extends [infer A, infer B, infer C] ? {type: 'array', elts: [A, B, C]} :
@@ -51,8 +52,8 @@ export type _SchemaFor<T> =
     T extends (infer U)[] ? {type: 'array', elts: SchemaFor<U>} :
     T extends object ? {type: 'object', props: {[K in keyof T]: SchemaFor<T[K]>}} :
     never;
-
-export type SchemaFor<T> = _SchemaFor<T> | {type: 'default', schema: _SchemaFor<T>, value: T};
+type SchemaForNonDefault<T> = SchemaForBase<T> extends {type: 'boolean', value: true | false} ? {type: 'boolean', value: undefined} : SchemaForBase<T>;
+export type SchemaFor<T> = SchemaForNonDefault<T> | {type: 'default', schema: SchemaForNonDefault<T>, value: T};
 
 const s = {
     undefined: {type: 'undefined'},
@@ -81,111 +82,116 @@ function stringify(value: any): string {
     return inspect(value, {breakLength: Infinity});
 }
 
-const {validate} = new class {
 
-    key: string = '';
-    value: any = undefined;
-
-    constructor() {
-        this.validate = this.validate.bind(this);
+function error(expected: string, isExpected: boolean = true): never {
+    let msg: string;
+    if (isExpected) {
+        msg = `Expected ${expected}, got ${this.value}`;
+        if (key !== '') {
+            msg += ` (at ${key})`;
+        }
+    } else {
+        msg = expected;
     }
+    throw new CompilerError('ConfigError', msg, null);
+}
 
-    error(expected: string, isExpected: boolean = true): never {
-        let msg: string;
-        if (isExpected) {
-            msg = `Expected ${expected}, got ${this.value}`;
-            if (this.key !== '') {
-                msg += ` (at ${this.key})`;
+let key = '';
+
+function validate<T extends Schema>(value: unknown, schema: T): MatchingSchema<T> {
+    this.value = value;
+    switch (schema.type) {
+        case 'undefined':
+            if (value !== undefined) {
+                error('undefined');
             }
-        } else {
-            msg = expected;
-        }
-        throw new CompilerError('ConfigError', msg, null);
-    }
-
-    validate(value: unknown, schema: Schema): void {
-        this.value = value;
-        switch (schema.type) {
-            case 'undefined':
-                if (value !== undefined) {
-                    this.error('undefined');
+            break;
+        case 'null':
+            if (value !== null) {
+                error('null');
+            }
+            break;
+        case 'boolean':
+        case 'number':
+        case 'string':
+        case 'symbol':
+        case 'bigint':
+            if (typeof value !== schema.type) {
+                error(schema.type);
+            }
+            if (schema.value !== undefined) {
+                if (value !== schema.value) {
+                    error(stringify(schema.value));
                 }
-                break;
-            case 'null':
-                if (value !== null) {
-                    this.error('null');
-                }
-                break;
-            case 'boolean':
-            case 'number':
-            case 'string':
-            case 'symbol':
-            case 'bigint':
-                if (typeof value !== schema.type) {
-                    this.error(schema.type);
-                }
-                if (schema.value !== undefined) {
-                    if (value !== schema.value) {
-                        this.error(stringify(schema.value));
-                    }
-                }
-                break;
-            case 'object':
-                if (!value || !(typeof value === 'object' || typeof value === 'function')) {
-                    this.error('object');
-                }
-                let oldKey = this.key;
-                for (let key of Reflect.ownKeys(schema.props)) {
-                    if (typeof key === 'string' && key.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/)) {
-                        this.key = oldKey + '.' + key;
-                    } else {
-                        this.key = oldKey + '[' + String(key) + ']';
-                    }
-                    this.validate(value[key], schema.props[key]);
-                }
-                this.key = oldKey;
-                break;
-            case 'array':
-                if (!Array.isArray(value)) {
-                    this.error('array');
-                }
-                let elts = schema.elts;
-                if (Array.isArray(elts)) {
-                    for (let i = 0; i < elts.length; i++) {
-                        this.validate(value[i], elts[i]);
-                    }
+            }
+            break;
+        case 'object':
+            if (!value || !(typeof value === 'object' || typeof value === 'function')) {
+                error('object');
+            }
+            let oldKey = key;
+            for (let key of Reflect.ownKeys(schema.props)) {
+                if (typeof key === 'string' && key.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/)) {
+                    key = oldKey + '.' + key;
                 } else {
-                    value.forEach(x => this.validate(x, elts));
+                    key = oldKey + '[' + String(key) + ']';
                 }
-                break;
-            case 'union':
-                let errors: [number, string][] = [];
-                for (let i = 0; i < schema.schemas.length; i++) {
-                    try {
-                        this.validate(value, schema.schemas[i]);
-                    } catch (error) {
-                        errors.push([i, String(error)]);
-                    }
+                validate(value[key], schema.props[key]);
+            }
+            key = oldKey;
+            break;
+        case 'array':
+            if (!Array.isArray(value)) {
+                error('array');
+            }
+            let elts = schema.elts;
+            if (Array.isArray(elts)) {
+                for (let i = 0; i < elts.length; i++) {
+                    validate(value[i], elts[i]);
                 }
-                if (errors.length > 0) {
-                    this.error(`Cannot find match for union:\n${errors.map(([i, msg]) => `    Tried overload ${i}, got '${msg}'`).join('\n')}`, false);
+            } else {
+                // @ts-ignore
+                value.forEach(x => validate(x, elts));
+            }
+            break;
+        case 'union':
+            let errors: [number, string][] = [];
+            for (let i = 0; i < schema.schemas.length; i++) {
+                try {
+                    validate(value, schema.schemas[i]);
+                } catch (error) {
+                    errors.push([i, String(error)]);
                 }
-                break;
-        }
+            }
+            if (errors.length > 0) {
+                error(`Cannot find match for union:\n${errors.map(([i, msg]) => `    Tried overload ${i}, got '${msg}'`).join('\n')}`, false);
+            }
+            break;
+        case 'default':
+            if (value === undefined) {
+                return schema.value;
+            } else {
+                return validate(value, schema.schema);
+            }
     }
-
+    // @ts-ignore
+    return value;
 }
 
 
 export interface Config {
-    files: string[];
     runTsc: boolean;
     fileTypes: {[key: string]: string};
     rootDir: string;
     moduleDir: string;
+    outDir: string;
 }
 
-const SCHEMA: SchemaFor<Config> = s.object({
+export interface FullConfig extends Config {
+    files: string[];
+}
+
+const SCHEMA = s.object({
     files: s.array(s.string),
     runTsc: s.default(s.boolean, true),
     fileTypes: s.default(s.object, {
@@ -197,35 +203,51 @@ const SCHEMA: SchemaFor<Config> = s.object({
         '.ts': 'text/typescript',
         '.tsx': 'text/typescript-jsx',
     }),
-    rootDir: s.default(s.string, ''),
+    rootDir: s.default(s.string, '' as string),
+    outDir: s.default(s.string, ''),
     moduleDir: s.default(s.string, 'node_modules'),
-});
+}) satisfies SchemaFor<FullConfig>;
 
-const PATHS = ['.js', '.cjs', '.mjs', '.jsx', '.ts', '.tsx'].map(x => 'neutrino.config' + x);
-let configOrNull: Config | null = null;
-let dir = process.cwd();
-let found = false;
-while (dir.length > 0) {
-    for (let path of PATHS) {
-        let fullPath = join(dir, path);
-        if (fs.existsSync(fullPath)) {
-            found = true;
-            configOrNull = (await import(fullPath)).default;
-            SCHEMA.props.rootDir.value = dir;
-            validate(configOrNull, SCHEMA);
+export let config: Config = validate({files: []}, SCHEMA);
+
+export async function loadConfig(): Promise<Config> {
+    const PATHS = ['.js', '.cjs', '.mjs', '.jsx', '.ts', '.tsx'].map(x => 'neutrino.config' + x);
+    let config: Config | null = null;
+    let dir = process.cwd();
+    let found = false;
+    while (dir.length > 0) {
+        for (let path of PATHS) {
+            let fullPath = join(dir, path);
+            if (fs.existsSync(fullPath)) {
+                found = true;
+                let module = (await import(fullPath)).default;
+                if ('default' in module) {
+                    module = module.default;
+                }
+                SCHEMA.props.rootDir.value = dir;
+                config = validate(config, SCHEMA);
+                break;
+            }
+        }
+        if (found) {
             break;
         }
+        dir = join(dir, '..');
     }
-    if (found) {
-        break;
+    if (config === null) {
+        throw new CompilerError('ConfigError', 'Cannot find configuration file', null);
     }
-    dir = join(dir, '..');
+    setConfig(config);
+    return config;
 }
-if (configOrNull === null) {
-    throw new CompilerError('ConfigError', 'Cannot find configuration file', null);
-}
-let config: Config = configOrNull;
+
 export default config;
+
+export function setConfig(newConfig: Config): void {
+    for (let key in newConfig) {
+        config[key] = newConfig[key];
+    }
+}
 
 
 export function getAbsPath(path: string): string {

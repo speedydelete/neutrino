@@ -23,7 +23,7 @@ export interface File {
 
 let idCount = 0;
 
-function getID(): string {
+export function getID(): string {
     return (idCount++).toString(36);
 }
 
@@ -66,14 +66,14 @@ function getFile(path: string, type: string): File {
     let scope = new Scope();
     let inferrer = new Inferrer(path, code, scope);
     inferrer.getImportType = function(importPath: string): Type {
-        let file = addImport(join(path, importPath));
+        let file = loadImport(join(path, importPath));
         return t.object(Object.fromEntries(Array.from(file.exports)));
     };
     inferrer.program(ast);
     let dependsOn: File[] = [];
     for (let node of ast.body) {
         if (node.type === 'ImportDeclaration') {
-            dependsOn.push(addImport(node.source.value, path));
+            dependsOn.push(loadImport(node.source.value, path));
         }
     }
     let out: File = {
@@ -90,7 +90,16 @@ function getFile(path: string, type: string): File {
     return out;
 }
 
-export function addImport(path: string, relativeTo?: string): File {
+function inferType(path: string): string {
+    for (let ext in config.fileTypes) {
+        if (path.endsWith(ext)) {
+            return config.fileTypes[ext];
+        }
+    }
+    throw new CompilerError('ImportError', `Cannot find valid extension for file '${path}'`, null);
+}
+
+export function loadImport(path: string, relativeTo?: string): File {
     let startPath: string;
     if (path.startsWith('/') || path.startsWith('./') || path.startsWith('../')) {
         if (relativeTo) {
@@ -116,17 +125,11 @@ export function addImport(path: string, relativeTo?: string): File {
             throw new CompilerError('ImportError', `Cannot resolve import '${path}'`, null);
         }
     } else {
-        let found = false;
-        for (let ext in config.fileTypes) {
-            if (path.endsWith(ext)) {
-                type = config.fileTypes[ext];
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            throw new CompilerError('ImportError', `Cannot find valid extension for file '${path}'`, null);
-        }
+        let newType = inferType(path);
     }
     return getFile(getPathFromRoot(path), type);
+}
+
+export function loadFile(path: string): File {
+    return getFile(resolve(path), inferType(path));
 }

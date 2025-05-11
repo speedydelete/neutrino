@@ -2,36 +2,20 @@
 import * as fs from 'node:fs';
 import * as parser from '@babel/parser';
 import * as t from './types.js';
-import {Scope, GLOBAL_SCOPE} from './util.js';
-import {Inferrer} from './inferrer.js';
+import {Scope} from './util.js';
 import {Generator} from './generator.js';
+import {File, loadFile, getID} from './imports.js';
+import config, {Config, setConfig} from './config.js';
 
 
+export function 
 
-
-export interface CompilerOptions {
-    filename?: string;
-    ts?: boolean;
-    jsx?: boolean;
-    dts?: string;
-}
-
-export function compile(code: string, options: CompilerOptions = {}): string {
-    let filename = options.filename ?? '<anonymous>';
-    let plugins: parser.ParserPlugin[] = [];
-    if (options.jsx) {
-        plugins.push('jsx');
+export function compile(file: File, config_?: Config): {code: string, header: string} {
+    if (config_) {
+        setConfig(config_);
     }
-    if (options.ts) {
-        plugins.push('typescript');
+    let gen = new Generator(getID(), file.path, file.code);
+    return {
+        code: gen.program(file.ast),
     }
-    let parserOptions: parser.ParserOptions = {
-        sourceFilename: filename,
-        plugins,
-    }
-    let scope = new Scope(GLOBAL_SCOPE);
-    if (options.dts) {
-        (new Inferrer(filename, code, scope)).program(parser.parse(code, parserOptions).program);
-    }
-    return (new Generator('', filename, code, scope)).program(parser.parse(code, parserOptions).program);
 }
