@@ -7,7 +7,7 @@ export {Caster} from './caster.js';
 export {Generator} from './generator.js';
 export {config, setConfig} from './config.js';
 export {File, loadImport, loadFile} from './imports.js';
-export {compile} from './compiler.js';
+export {transform, transformAll} from './compiler.js';
 
 import * as fs from 'node:fs';
 import * as parser from '@babel/parser';

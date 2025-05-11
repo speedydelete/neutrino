@@ -21,10 +21,13 @@ export interface File {
     scope: Scope;
 }
 
-let idCount = 0;
+export let nextIDNum = 0;
 
-export function getID(): string {
-    return (idCount++).toString(36);
+export function getID(num?: number): string {
+    if (num === undefined) {
+        num = nextIDNum++;
+    }
+    return num.toString(36);
 }
 
 const FILES: Map<string, File> = new Map();
@@ -49,7 +52,7 @@ function getFile(path: string, type: string): File {
             sourceFilename: path,
         }).program;
     } catch (error) {
-        if (error && typeof error === 'object' && error.code === 'BABEL_PARSER_SYNTAX_ERROR') {
+        if (error && typeof error === 'object' && error instanceof SyntaxError && 'code' in error && typeof error.code === 'string' && error.code === 'BABEL_PARSER_SYNTAX_ERROR' && 'loc' in error && error.loc && typeof error.loc === 'object' && 'index' in error.loc && typeof error.loc.index === 'number' && 'line' in error.loc && typeof error.loc.line === 'number' && 'column' in error.loc && typeof error.loc.column === 'number') {
             let [type, msg] = error.message.split(': ');
             let index = error.loc.index;
             throw new CompilerError(type, msg, {
@@ -125,7 +128,7 @@ export function loadImport(path: string, relativeTo?: string): File {
             throw new CompilerError('ImportError', `Cannot resolve import '${path}'`, null);
         }
     } else {
-        let newType = inferType(path);
+        type = inferType(path);
     }
     return getFile(getPathFromRoot(path), type);
 }

@@ -33,6 +33,7 @@ export class Generator extends ASTManipulator {
     topLevel: string = '';
     thisArgs: Stack<string>;
     thisTypes: Stack<Type>;
+    initScope: Scope;
 
     constructor(id: string, fullPath: string, raw: string, scope?: Scope) {
         super(fullPath, raw, scope);
@@ -41,6 +42,7 @@ export class Generator extends ASTManipulator {
         this.cast = this.newConnectedSubclass(Caster);
         this.thisArgs = this.createStack();
         this.thisTypes = this.createStack();
+        this.initScope = this.scope;
     }
 
     indent(code: string): string {
@@ -92,6 +94,9 @@ export class Generator extends ASTManipulator {
             if (name) {
                 out += ' ' + name;
             }
+            if (decl) {
+                out = 'extern ' + out;
+            }
             return out;
         }
     }
@@ -107,9 +112,9 @@ export class Generator extends ASTManipulator {
     getDeclarations(): string {
         let out: string[] = [];
         for (let [key, type] of this.scope.vars) {
-            out.push(this.type(type, this.identifier(key, Boolean(type.type === 'object' && type.call)), true) + ';\n');
+            out.push(this.type(type, this.identifier(key, Boolean(type.type === 'object' && type.call)), true));
         }
-        return out.join(';\n');
+        return out.join('');
     }
 
     function(node: b.Function): string {
@@ -506,7 +511,6 @@ export class Generator extends ASTManipulator {
     program(node: b.Program): string {
         this.importIncludes = [];
         this.functions = [];
-        this.topLevel = 'init(argc, argv);\n';
         this.infer.program(node);
         for (let statement of node.body) {
             this.topLevel += this.statement(statement);
@@ -524,7 +528,7 @@ export class Generator extends ASTManipulator {
         if (this.functions.length > 0) {
             out += this.functions.join('\n\n') + '\n\n';
         }
-        out += 'int main(int argc, char** argv) {\n' + this.indent(this.topLevel.slice(0, -1)) + '\n}\n';
+        out += `void main_${this.id}(int argc, char** argv) {\n${this.indent(this.topLevel.slice(0, -1))}\n}\n`;
         return out;
     }
 
