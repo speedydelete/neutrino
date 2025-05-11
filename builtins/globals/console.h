@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_globals_console
-#define Neutrino_globals_console
+#ifndef NEUTRINO_GLOBALS_CONSOLE
+#define NEUTRINO_GLOBALS_CONSOLE
 
 #include <stdio.h>
 #include "../core/object.h"

@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_globals_math
-#define Neutrino_globals_math
+#ifndef NEUTRINO_GLOBALS_MATH
+#define NEUTRINO_GLOBALS_MATH
 
 #include <inttypes.h>
 #include <math.h>

@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_core_symbol
-#define Neutrino_core_symbol
+#ifndef NEUTRINO_CORE_SYMBOL
+#define NEUTRINO_CORE_SYMBOL
 
 #include "util.h"
 

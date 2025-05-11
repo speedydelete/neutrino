@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_core_types
-#define Neutrino_core_types
+#ifndef NEUTRINO_CORE_TYPES
+#define NEUTRINO_CORE_TYPES
 
 
 #include "util.h"

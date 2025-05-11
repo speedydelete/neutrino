@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_core_boolean
-#define Neutrino_core_boolean
+#ifndef NEUTRINO_CORE_BOOLEAN
+#define NEUTRINO_CORE_BOOLEAN
 
 #include "util.h"
 

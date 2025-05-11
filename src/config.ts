@@ -71,10 +71,16 @@ function validate(value: unknown): Config {
     validateKey(value, 'outDir', isString, value.rootDir, resolveRootDir);
     validateKey(value, 'moduleDir', isString, value.rootDir, resolveRootDir);
     validateKey(value, 'cc', isString, 'gcc');
-    validateKey(value, 'cflags', isString, CFLAGS);
-    validateKey(value, 'ldflags', isString, LDFLAGS);
+    validateKey(value, 'cflags', isString, '');
+    validateKey(value, 'ldflags', isString, '');
     validateKey(value, 'useDefaultCflags', isBoolean, true);
     validateKey(value, 'useDefaultLdflags', isBoolean, true);
+    if (value.useDefaultCflags) {
+        value.cflags = CFLAGS + ' ' + value.cflags;
+    }
+    if (value.useDefaultLdflags) {
+        value.ldflags = LDFLAGS + ' ' + value.ldflags;
+    }
     return value;
 }
 

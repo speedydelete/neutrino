@@ -1,6 +1,6 @@
 
-#ifndef Neutrino
-#define Neutrino
+#ifndef NEUTRINO_INDEX
+#define NEUTRINO_INDEX
 
 #include "core/array.h"
 #include "core/boolean.h"

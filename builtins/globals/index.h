@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_globals
-#define Neutrino_globals
+#ifndef NEUTRINO_GLOBALS
+#define NEUTRINO_GLOBALS
 
 #include "core.h"
 #include "string.h"

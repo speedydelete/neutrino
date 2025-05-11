@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_core_array
-#define Neutrino_core_array
+#ifndef NEUTRINO_CORE_ARRAY
+#define NEUTRINO_CORE_ARRAY
 
 #include <stdarg.h>
 #include "util.h"

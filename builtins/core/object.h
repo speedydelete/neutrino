@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_core_object
-#define Neutrino_core_object
+#ifndef NEUTRINO_CORE_OBJECT
+#define NEUTRINO_CORE_OBJECT
 
 #include "util.h"
 #include <stdbool.h>

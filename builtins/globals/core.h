@@ -1,6 +1,6 @@
 
-#ifndef Neutrino_globals_core
-#define Neutrino_globals_core
+#ifndef NEUTRINO_GLOBALS_CORE
+#define NEUTRINO_GLOBALS_CORE
 
 #include <stdbool.h>
 #include <stdlib.h>
