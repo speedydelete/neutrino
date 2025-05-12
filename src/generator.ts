@@ -2,7 +2,7 @@
 import type * as b from '@babel/types';
 import * as t from './types.js';
 import {Type} from './types.js';
-import {Stack, Scope, ASTManipulator, changeExtension} from './util.js';
+import {Stack, Scope, ASTManipulator, changeExtension, GLOBAL_SCOPE} from './util.js';
 import {Inferrer} from './inferrer.js';
 import {Caster} from './caster.js';
 
@@ -33,6 +33,7 @@ export class Generator extends ASTManipulator {
     topLevel: string = '';
     thisArgs: Stack<string>;
     thisTypes: Stack<Type>;
+    isGlobal: boolean = true;
     initScope: Scope;
 
     constructor(id: string, fullPath: string, raw: string, scope?: Scope) {
@@ -41,7 +42,7 @@ export class Generator extends ASTManipulator {
         this.infer = this.newConnectedSubclass(Inferrer);
         this.cast = this.newConnectedSubclass(Caster);
         this.thisArgs = this.createStack();
-        this.thisTypes = this.createStack();
+        this.thisTypes = this.createStack([this.getVar('globalThis')]);
         this.initScope = this.scope;
     }
 
@@ -153,6 +154,8 @@ export class Generator extends ASTManipulator {
                 return this.type(type.params[index][1], 'js_variable_' + this.id + '_' + param.name);
             }
         }).join(', ') : '') + ') ';
+        let wasGlobal = this.isGlobal;
+        this.isGlobal = false;
         this.pushScope();
         for (let [name, paramType] of type.params) {
             this.scope.set(name, paramType);
@@ -170,6 +173,7 @@ export class Generator extends ASTManipulator {
         } else {
             out += '{\n    return ' + this.expression(node.body) + ';\n}';
         }
+        this.isGlobal = wasGlobal;
         if ('id' in node && node.id) {
             this.topLevel += 'js_variable_' + this.id + '_' + node.id.name + ' = ' + 'create_object(NULL, 1, "prototype", create_object(NULL, 0));\n';
         }
@@ -232,7 +236,11 @@ export class Generator extends ASTManipulator {
             case 'Import':
                 this.error('SyntaxError', 'Dynamic import is not supported');
             case 'ThisExpression':
-                return 'this';
+                if (this.isGlobal) {
+                    return 'js_global_globalThis';
+                } else {
+                    return 'this';
+                }
             case 'ArrowFunctionExpression':
                 return this.function(node);
             case 'YieldExpression':

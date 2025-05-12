@@ -11,9 +11,9 @@ export class Inferrer extends ASTManipulator {
     thisTypes: Stack<Type>;
     superTypes: Stack<Type>;
 
-    constructor(fullPath: string, raw: string, scope?: Scope) {
+    constructor(fullPath: string, raw: string, scope?: Scope, useGlobalThis: boolean = true) {
         super(fullPath, raw, scope);
-        this.thisTypes = this.createStack();
+        this.thisTypes = this.createStack(useGlobalThis ? [this.getVar('globalThis')] : []);
         this.superTypes = this.createStack();
     }
 
