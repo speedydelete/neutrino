@@ -1,5 +1,7 @@
 
-import {test} from './module.js';
+// import {test} from './module.js';
 
-console.log('hi');
-test();
+// console.log('hi');
+// test();
+
+console.log('Hello, World!');

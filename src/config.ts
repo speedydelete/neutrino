@@ -15,6 +15,7 @@ export interface Config {
     ldflags: string;
     useDefaultCflags: boolean;
     useDefaultLdflags: boolean;
+    optimization: number;
 }
 
 
@@ -59,6 +60,7 @@ function validateKey<K extends string, F extends (arg: any) => arg is any>(value
 
 const isBoolean = (x: unknown): x is boolean => typeof x === 'boolean';
 const isString = (x: unknown): x is string => typeof x === 'string';
+const isNumber = (x: unknown): x is number => typeof x === 'number';
 const resolveRootDir = (value: string) => resolve(rootDir, value);
 
 function validate(value: unknown): Config {
@@ -81,6 +83,7 @@ function validate(value: unknown): Config {
     if (value.useDefaultLdflags) {
         value.ldflags = LDFLAGS + ' ' + value.ldflags;
     }
+    validateKey(value, 'optimization', isNumber, 1);
     return value;
 }
 

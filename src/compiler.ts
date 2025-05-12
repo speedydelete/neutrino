@@ -116,6 +116,9 @@ export function compilePath(path: string, link: boolean = false, deps: string[] 
     } else {
         options += ' -c -o ' + path.slice(0, -2) + '.o';
     }
+    if (config.optimization > 0) {
+        options += ' -O' + config.optimization;
+    }
     execSync(`${config.cc} ${config.cflags} ${options} ${config.ldflags}`);
 }
 
