@@ -26,10 +26,12 @@
     "url": "git+https://github.com/speedydelete/neutrino.git"
   },
   "dependencies": {
-    "@babel/parser": "^7.27.2"
+    "@babel/parser": "^7.27.2",
+    "css-tree": "^3.1.0"
   },
   "devDependencies": {
     "@babel/types": "^7.27.1",
+    "@types/css-tree": "^2.3.10",
     "@types/node": "^22.15.17",
     "typescript": "^5.8.3"
   },

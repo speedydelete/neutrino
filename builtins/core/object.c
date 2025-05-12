@@ -4,8 +4,8 @@
 #include <stdarg.h>
 #include <string.h>
 #include "util.h"
-
 #include "object.h"
+#include "types.h"
 
 
 int hash4(char* str) {
@@ -34,51 +34,49 @@ object* create_object(object* proto, int length, ...) {
     return out;
 }
 
-void* get_object_string(object* obj, char* key) {
-    struct string_property* prop = obj->data[hash4(key)];
+void* get_object_string(object* this, char* key) {
+    string_property* prop = this->data[hash4(key)];
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
             return prop->value;
         }
         prop = prop->next;
     }
-    if (obj->prototype != NULL) {
-        return get_object_string(obj->prototype, key);
+    if (this->prototype != NULL) {
+        return get_object_string(this->prototype, key);
     }
     return NULL;
 }
 
-void* get_object_symbol(object* obj, symbol key) {
-    struct symbol_property* prop = obj->symbols;
+void* get_object_symbol(object* this, symbol key) {
+    symbol_property* prop = this->symbols;
     while (prop != NULL) {
         if (prop->key == key) {
             return prop->value;
         }
         prop = prop->next;
     }
-    if (obj->prototype != NULL) {
-        return get_object_symbol(obj->prototype, key);
+    if (this->prototype != NULL) {
+        return get_object_symbol(this->prototype, key);
     }
     return NULL;
 }
 
-
-
 #define create_prop(type, name, key, value) \
-    struct type* name = safe_malloc(sizeof(struct type)); \
+    type* name = safe_malloc(sizeof(type)); \
     name->next = NULL; \
     name->key = key; \
     name->value = value;
 
-void set_object_string(object* obj, char* key, void* value) {
+void set_object_string(object* this, char* key, void* value) {
     int hashed = hash4(key);
-    struct string_property* prop = obj->data[hashed];
+    string_property* prop = this->data[hashed];
     if (prop == NULL) {
         create_prop(string_property, prop, key, value);
-        obj->data[hashed] = prop;
+        this->data[hashed] = prop;
         return;
     }
-    struct string_property* prev = prop;
+    string_property* prev = prop;
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
             prop->value = value;
@@ -89,17 +87,16 @@ void set_object_string(object* obj, char* key, void* value) {
     }
     create_prop(string_property, new_prop, key, value);
     prev->next = new_prop;
-    return;
 }
 
-void set_object_symbol(object* obj, symbol key, void* value) {
-    struct symbol_property* prop = obj->symbols;
+void set_object_symbol(object* this, symbol key, void* value) {
+    symbol_property* prop = this->symbols;
     if (prop == NULL) {
         create_prop(symbol_property, new_prop, key, value);
-        obj->symbols = new_prop;
+        this->symbols = new_prop;
         return;
     }
-    struct symbol_property* prev = prop;
+    symbol_property* prev = prop;
     while (prop != NULL) {
         if (prop->key == key) {
             prop->value = value;
@@ -112,9 +109,8 @@ void set_object_symbol(object* obj, symbol key, void* value) {
     prev->next = new_prop;
 }
 
-
-bool has_object_string(object* obj, char* key) {
-    struct string_property* prop = obj->data[hash4(key)];
+bool has_object_string(object* this, char* key) {
+    string_property* prop = this->data[hash4(key)];
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
             return true;
@@ -124,8 +120,8 @@ bool has_object_string(object* obj, char* key) {
     return false;
 }
 
-bool has_object_symbol(object* obj, symbol key) {
-    struct symbol_property* prop = obj->symbols;
+bool has_object_symbol(object* this, symbol key) {
+    symbol_property* prop = this->symbols;
     while (prop != NULL) {
         if (prop->key == key) {
             return true;
@@ -135,18 +131,17 @@ bool has_object_symbol(object* obj, symbol key) {
     return false;
 }
 
-
-bool delete_object_string(object* obj, char* key) {
+bool delete_object_string(object* this, char* key) {
     int hashed = hash4(key);
-    struct string_property* prop = obj->data[hashed];
+    string_property* prop = this->data[hashed];
     if (prop == NULL) {
         return false;
     }
     if (strcmp(prop->key, key) == 0) {
-        obj->data[hashed] = prop->next;
+        this->data[hashed] = prop->next;
         return true;
     }
-    struct string_property* prev = prop;
+    string_property* prev = prop;
     prop = prop->next;
     while (prop != NULL) {
         if (strcmp(prop->key, key) == 0) {
@@ -159,15 +154,15 @@ bool delete_object_string(object* obj, char* key) {
     return false;
 }
 
-bool delete_object_symbol(object* obj, symbol key) {
-    struct symbol_property* prop = obj->symbols;
+bool delete_object_symbol(object* this, symbol key) {
+    symbol_property* prop = this->symbols;
     if (prop == NULL) {
         return false;
     }
     if (prop->key == key) {
-        obj->symbols = prop->next;
+        this->symbols = prop->next;
     }
-    struct symbol_property* prev = prop;
+    symbol_property* prev = prop;
     prop = prop->next;
     while (prop != NULL) {
         if (prop->key == key) {

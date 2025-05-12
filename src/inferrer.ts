@@ -674,6 +674,7 @@ export class Inferrer extends ASTManipulator {
             this.class(node);
         } else if (node.type === 'ImportDeclaration') {
             let ns = this.getImportType(node.source.value, this.importAttributes(node.attributes));
+            let oldKeys = new Set(this.scope.vars.keys());
             for (let spec of node.specifiers) {
                 if (spec.type === 'ImportSpecifier') {
                     this.setLValue(spec.local, this.getProp(ns, this.importSpecifier(spec.imported)));
@@ -682,6 +683,10 @@ export class Inferrer extends ASTManipulator {
                 } else {
                     this.setLValue(spec.local, ns);
                 }
+            }
+            let newKeys = (new Set(this.scope.vars.keys())).difference(oldKeys);
+            for (let key of newKeys) {
+                this.scope.imports.add(key);
             }
         } else if (node.type === 'ExportNamedDeclaration') {
             if (node.declaration) {

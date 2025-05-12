@@ -58,6 +58,7 @@ interface ObjectType extends ToString {
     props: {[key: PropertyKey]: Type};
     call: CallData | null;
     indexes: Indexes;
+    descriptor: boolean;
 }
 
 interface ArrayType extends ToString {
@@ -78,7 +79,7 @@ export const symbol: SymbolType = {type: 'symbol', toString() {return 'symbol';}
 export const INDEXES = ['string', 'number', 'symbol'] as const;
 
 export function object(props: {[key: PropertyKey]: Type} = {}, call: CallData | null = null, indexes: Indexes = {}): ObjectType {
-    return {type: 'object', props, call, indexes, toString() {return 'object';}};
+    return {type: 'object', props, call, indexes, toString() {return 'object';}, descriptor: false};
 }
 export function array(elts: Type | Type[]): ArrayType {
     return {type: 'array', elts, toString() {return 'array';}};

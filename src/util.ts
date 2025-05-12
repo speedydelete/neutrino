@@ -1,8 +1,21 @@
 
+import {join, dirname} from 'node:path';
 import type * as b from '@babel/types';
 import * as t from './types.js';
 import {Type} from './types.js';
 import {highlight} from './highlighter.js';
+
+
+export function changeExtension(path: string, ext: string): string {
+    let dir = dirname(path);
+    path = path.slice(dir.length + 1);
+    if (path.startsWith('.')) {
+        path = path.slice(0, path.slice(1).indexOf('.'));
+    } else {
+        path = path.slice(0, path.indexOf('.'));
+    }
+    return join(dir, path) + ext;
+}
 
 
 export interface SourceData {
@@ -65,9 +78,9 @@ export class CompilerError extends Error {
 export class Stack<T> {
 
     values: T[];
-    sourceData: SourceData;
+    sourceData: SourceData | null;
     
-    constructor(values: T[] = [], sourceData: SourceData) {
+    constructor(values: T[] = [], sourceData: SourceData | null = null) {
         this.values = values;
         this.sourceData = sourceData;
     }
@@ -101,12 +114,14 @@ export class Scope {
     vars: Map<string, Type> = new Map();
     types: Map<string, Type> = new Map();
     exports: Map<string, [Type, string]> = new Map();
+    imports: Set<string> = new Set();
 
     constructor(parent?: Scope | null) {
         if (parent === undefined) {
             parent = GLOBAL_SCOPE;
         } else if (parent instanceof Scope) {
             this.exports = parent.exports;
+            this.imports = parent.imports;
         }
         this.parent = parent;
     }

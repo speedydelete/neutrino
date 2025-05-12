@@ -1,8 +1,8 @@
 
-import {join, resolve, dirname} from 'node:path';
+import {join, resolve} from 'node:path';
 import * as fs from 'node:fs';
 import {execSync} from 'node:child_process';
-import {Scope} from './util.js';
+import {CompilerError, Scope, changeExtension} from './util.js';
 import {Generator} from './generator.js';
 import {File, loadFile, getImportTypeGetter, getImportPath} from './imports.js';
 import config, {Config, setConfig, getAbsPath} from './config.js';
@@ -13,19 +13,25 @@ export function transform(file: File, config_?: Config): {code: string, header: 
         setConfig(config_);
     }
     let scope = new Scope();
-    let gen = new Generator(file.id, file.path, file.code, scope);
-    gen.infer.getImportType = getImportTypeGetter(file.path);
-    gen.getImportData = function(path: string) {
-        path = getImportPath(path, file.path);
-        let file_ = loadFile(path);
-        return [path, file_.id, file_.scope];
-    };
-    let code = gen.program(file.ast);
-    gen.scope = scope;
-    return {
-        code,
-        header: gen.getDeclarations(),
+    let code: string;
+    let header: string;
+    if (file.ast.type === 'html') {
+        throw new CompilerError('NotImplementedError', 'Compilation of HTML is not supported', null);
+    } else if (file.ast.type === 'Program') {
+        let gen = new Generator(file.id, file.path, file.code, scope);
+        gen.infer.getImportType = getImportTypeGetter(file.path);
+        gen.getImportData = function(path: string) {
+            path = getImportPath(path, file.path);
+            let file_ = loadFile(path);
+            return [path, file_.id, file_.scope];
+        };
+        code = gen.program(file.ast);
+        gen.scope = scope;
+        header = gen.getDeclarations(true) + `\n\nvoid main_${file.id}();`;
+    } else {
+        throw new CompilerError('NotImplementedError', 'Compilation of CSS is not supported', null);
     }
+    return {code, header};
 }
 
 
@@ -75,22 +81,11 @@ export function transformAll(config_?: Config): void {
         let ids = _transformAll(file);
         path = getAbsPath(path);
         let code = fs.readFileSync(path + '.c').toString();
-        let body = '    init(argc, argv);\n' + ids.map(id => `    main_${id}();`);
-        fs.writeFileSync(path + '.c', code + `\n\nint main(int argc, char** argv) {\n${body}\n}`);
+        let body = '    init(argc, argv);\n' + ids.map(id => `    main_${id}();`).join('\n');
+        fs.writeFileSync(path + '.c', code + `\n\nint main(int argc, char** argv) {\n${body}\n}\n`);
     }
 }
 
-
-function changeExtension(path: string, ext: string): string {
-    let dir = dirname(path);
-    path = path.slice(dir.length + 1);
-    if (path.startsWith('.')) {
-        path = path.slice(0, path.slice(1).indexOf('.'));
-    } else {
-        path = path.slice(0, path.indexOf('.'));
-    }
-    return join(dir, path) + ext;
-}
 
 let builtinPaths: string[] = [];
 
@@ -106,25 +101,36 @@ function getBuiltinPaths(dir: string): void {
 }
 getBuiltinPaths(join(import.meta.dirname, '../builtins'));
 
-export function compilePath(path: string, link: boolean = false): void {
+export function compilePath(path: string, link: boolean = false, deps: string[] = []): void {
     path = resolve(config.rootDir, path);
-    let options = path + ' ';
+    let options = '';
     if (link) {
-        options += builtinPaths.map(path => changeExtension(path, '.o')).join(' ') + ' -o ' + changeExtension(path, '');
+        options += builtinPaths.map(path => changeExtension(path, '.o')).join(' ') + ' ';
+        if (deps.length > 0) {
+            options += deps.map(path => path + '.o').join(' ') + ' ';
+        }
+    }
+    options += path;
+    if (link) {
+        options += ' -o ' + changeExtension(path, '');
     } else {
-        options += '-c -o ' + path.slice(0, -2) + '.o';
+        options += ' -c -o ' + path.slice(0, -2) + '.o';
     }
     execSync(`${config.cc} ${config.cflags} ${options} ${config.ldflags}`);
 }
 
 let compiledIds: string[] = [];
 
-function _compile(file: File): void {
+function getRecursiveDependsOn(file: File): string[] {
+    return file.dependsOn.map(file => file.path).concat(...file.dependsOn.map(file => getRecursiveDependsOn(file)));
+}
+
+function _compile(file: File, link: boolean = true): void {
     if (compiledIds.includes(file.id)) {
         return;
     }
-    file.dependsOn.forEach(_compile);
-    compilePath(file.path + '.c', true);
+    file.dependsOn.forEach(file => _compile(file, false));
+    compilePath(file.path + '.c', link, getRecursiveDependsOn(file));
     compiledIds.push(file.id);
 }
 

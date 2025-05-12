@@ -19,17 +19,17 @@ char* stradd(char* x, char* y);
 
 typedef uint32_t symbol;
 
-struct string_property {
+typedef struct string_property {
     char* key;
     void* value;
     struct string_property* next;
-};
+} string_property;
 
-struct symbol_property {
+typedef struct symbol_property {
     symbol key;
     void* value;
     struct symbol_property* next;
-};
+} symbol_property;
 
 typedef struct object {
     struct object* prototype;

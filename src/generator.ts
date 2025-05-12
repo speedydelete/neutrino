@@ -2,9 +2,9 @@
 import type * as b from '@babel/types';
 import * as t from './types.js';
 import {Type} from './types.js';
+import {Stack, Scope, ASTManipulator, changeExtension} from './util.js';
 import {Inferrer} from './inferrer.js';
 import {Caster} from './caster.js';
-import {Stack, Scope, ASTManipulator} from './util.js';
 
 
 const TYPES = {
@@ -86,20 +86,27 @@ export class Generator extends ASTManipulator {
             out += (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(';
             if (!type.call.noThis) {
                 out += 'object* this';
+                if (type.call.params.length > 0) {
+                    out += ', ';
+                }
             }
             if (type.call.params.length > 0) {
-                out += ', ' + type.call.params.map(param => this.type(param[1], param[0])).join(', ');
+                out += type.call.params.map(param => this.type(param[1], param[0])).join(', ');
             }
-            return out + ');';
+            out += ')';
+            if (decl) {
+                out += ';';
+            }
+            return out;
         } else {
             let out = TYPES[type.type];
             if (name) {
                 out += ' ' + name;
             }
             if (decl) {
-                out = 'extern ' + out;
+                out = 'extern ' + out + ';';
             }
-            return out + ';';
+            return out;
         }
     }
 
@@ -111,10 +118,19 @@ export class Generator extends ASTManipulator {
         }
     }
 
-    getDeclarations(): string {
+    getDeclarations(header: boolean = false): string {
         let out: string[] = [];
         for (let [key, type] of this.scope.vars) {
-            out.push(this.type(type, this.identifier(key, Boolean(type.type === 'object' && type.call)), true));
+            if (!this.scope.imports.has(key)) {
+                if (type.type === 'object' && type.call) {
+                    if (header) {
+                        out.push(this.type(type, this.identifier(key, true), true) + '\n');
+                    }
+                    out.push(`${header ? 'extern ' : ''}object* js_variable_${this.id}_${key};\n`);
+                } else {
+                    out.push(this.type(type, this.identifier(key), true) + '\n');
+                }
+            }
         }
         return out.join('');
     }
@@ -137,12 +153,20 @@ export class Generator extends ASTManipulator {
             this.scope.set(name, paramType);
         }
         if (node.body.type === 'BlockStatement') {
-            out += this.statement(node.body);
+            out += '{\n';
+            node.body.body.forEach(x => this.infer.statement(x));
+            out += this.indent((this.getDeclarations() + node.body.body.map(x => this.statement(x))).slice(0, -1));
+            if (type.returnType.type === 'undefined') {
+                out += '\n    return NULL;';
+            } else if (type.returnType.type === 'any') {
+                out += `\n    return create_any_from_undefined(NULL);`;
+            }
+            out += '\n}\n';
         } else {
             out += '{\n    return ' + this.expression(node.body) + ';\n}';
         }
         if ('id' in node && node.id) {
-            this.topLevel += 'js_variable_' + this.id + '_' + node.id.name + ' = ' + 'create_object(NULL, 1, "prototype", create_object(0));\n';
+            this.topLevel += 'js_variable_' + this.id + '_' + node.id.name + ' = ' + 'create_object(NULL, 1, "prototype", create_object(NULL, 0));\n';
         }
         this.popScope();
         this.functions.push(out);
@@ -227,9 +251,9 @@ export class Generator extends ASTManipulator {
                 }
             case 'ObjectExpression':
                 if (node.properties.length === 0) {
-                    return 'create_object(NULL, 0)';
+                    return 'create_object(object_prototype, 0)';
                 } else {
-                    return 'create_object(NULL, ' + node.properties.length + ', ' + node.properties.map(prop => {
+                    return 'create_object(object_prototype, ' + node.properties.length + ', ' + node.properties.map(prop => {
                         if (prop.type === 'SpreadElement') {
                             this.error('SyntaxError', 'Spread elements are not supported');
                         } else {
@@ -512,14 +536,14 @@ export class Generator extends ASTManipulator {
                 return out;
             case 'ImportDeclaration':
                 let [path, id, scope] = this.getImportData(node.source.value);
-                out = `#include "${path}"\n`;
+                this.importIncludes.push(`#include "${path}.h"`);
                 for (let spec of node.specifiers) {
                     if (spec.type === 'ImportNamespaceSpecifier') {
                         this.error('SyntaxError', 'Namespace imports are not supported');
                     }
                     let name = this.identifier(spec.local.name);
                     if (spec.type === 'ImportDefaultSpecifier') {
-                        out += `#define ${name} js_defaultexport_${id}`;
+                        this.importIncludes.push(`#define ${name} js_defaultexport_${id}`);
                     } else {
                         let export_ = scope.exports.get(this.infer.importSpecifier(spec.imported));
                         if (!export_) {
@@ -527,12 +551,16 @@ export class Generator extends ASTManipulator {
                         }
                         let type = export_[0];
                         let fv = type.type === 'object' && type.call ? 'function' : 'variable';
-                        out += `#define ${name} js_${fv}_${id}_${export_[1]}`;
+                        this.importIncludes.push(`#define ${name} js_${fv}_${id}_${export_[1]}`);
                     }
                 }
-                return out;
-            case 'ExportNamedDeclaration':
                 return '';
+            case 'ExportNamedDeclaration':
+                if (node.declaration) {
+                    return this.statement(node.declaration);
+                } else {
+                    return '';
+                }
             case 'ExportDefaultDeclaration':
                 this.topLevel += `js_defaultexport_${this.id} = ${this.expression(node.declaration)}`;
                 return `${this.type(this.infer.expression(node.declaration))} js_defaultexport_${this.id}`;
@@ -546,7 +574,10 @@ export class Generator extends ASTManipulator {
         this.functions = [];
         this.infer.program(node);
         for (let statement of node.body) {
-            this.topLevel += this.statement(statement);
+            let code = this.statement(statement);
+            if (code !== '') {
+                this.topLevel += code;
+            }
         }
         let dir = import.meta.dirname;
         let out = `\n#include "${dir.slice(0, dir.lastIndexOf('/'))}/builtins/index.h"\n\n`;
@@ -562,7 +593,7 @@ export class Generator extends ASTManipulator {
         if (this.functions.length > 0) {
             out += this.functions.join('\n\n') + '\n\n';
         }
-        out += `void main_${this.id}() {\n${this.indent(this.topLevel.slice(0, -1))}\n}\n\n`;
+        out += `void main_${this.id}() {\n${this.indent(this.topLevel.slice(0, -1))}\n}\n`;
         return out;
     }
 

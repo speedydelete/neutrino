@@ -7,10 +7,10 @@
         "outDir": "lib",
         "rootDir": "src",
         "strict": true,
-        "esModuleInterop": true,
         "declaration": true,
         "emitDeclarationOnly": false,
-        "sourceMap": true
+        "sourceMap": true,
+        "resolveJsonModule": true
     },
     "files": ["src/index.ts"]
 }

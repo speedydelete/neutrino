@@ -1,23 +1,22 @@
 
 import {join, resolve, dirname} from 'node:path';
 import * as fs from 'node:fs';
-import * as b from '@babel/types';
-import * as parser from '@babel/parser';
 import * as t from './types.js';
 import {Type} from './types.js';
 import {CompilerError, Scope} from './util.js';
-import config, {getAbsPath, getPathFromRoot} from './config.js';
+import config, {getAbsPath} from './config.js';
 import {Inferrer} from './inferrer.js';
+import {parse, ParseResult} from './parser.js';
 
 
-export interface File {
+export interface File<T extends ParseResult = ParseResult> {
     path: string;
     type: string;
     id: string;
     exports: Map<string, [Type, string]>;
     dependsOn: File[];
     code: string;
-    ast: b.Program;
+    ast: T;
     scope: Scope;
 }
 
@@ -65,51 +64,27 @@ export function getImportTypeGetter(path: string): (importPath: string) => Type 
     }
 }
 
-function getFile(path: string, type: string): File {
+function getFile<T extends string>(path: string, type: T): File<ParseResult<T>> {
     let file = FILES.get(path);
     if (file) {
+        // @ts-ignore
         return file;
     }
     let code = fs.readFileSync(getAbsPath(path)).toString();
-    let plugins: parser.ParserPlugin[] = [];
-    if (type === 'text/typescript' || type === 'text/typescript-jsx') {
-        plugins.push('typescript');
-    } else if (type === 'text/javascript-jsx' || type === 'text/typescript-jsx') {
-        plugins.push('jsx');
-    }
-    let ast: b.Program;
-    try {
-        ast = parser.parse(code, {
-            plugins,
-            sourceType: 'module',
-            sourceFilename: path,
-        }).program;
-    } catch (error) {
-        if (error && typeof error === 'object' && error instanceof SyntaxError && 'code' in error && typeof error.code === 'string' && error.code === 'BABEL_PARSER_SYNTAX_ERROR' && 'loc' in error && error.loc && typeof error.loc === 'object' && 'index' in error.loc && typeof error.loc.index === 'number' && 'line' in error.loc && typeof error.loc.line === 'number' && 'column' in error.loc && typeof error.loc.column === 'number') {
-            let [type, msg] = error.message.split(': ');
-            let index = error.loc.index;
-            throw new CompilerError(type, msg, {
-                raw: code.slice(index, index + 1),
-                fullRaw: code,
-                file: path,
-                line: error.loc.line,
-                col: error.loc.column,
-            });
-        } else {
-            throw error;
-        }
-    }
+    let ast = parse(code, path, type);
     let scope = new Scope();
     let inferrer = new Inferrer(path, code, scope);
     inferrer.getImportType = getImportTypeGetter(path);
-    inferrer.program(ast);
     let dependsOn: File[] = [];
-    for (let node of ast.body) {
-        if (node.type === 'ImportDeclaration') {
-            dependsOn.push(loadImport(node.source.value, path));
+    if (ast.type === 'Program') {
+        inferrer.program(ast);
+        for (let node of ast.body) {
+            if (node.type === 'ImportDeclaration') {
+                dependsOn.push(loadImport(node.source.value, path));
+            }
         }
     }
-    let out: File = {
+    let out: File<ParseResult<T>> = {
         path,
         type,
         id: getID(),
@@ -119,6 +94,7 @@ function getFile(path: string, type: string): File {
         ast,
         scope,
     };
+    // @ts-ignore
     FILES.set(path, out);
     return out;
 }
