@@ -1,2 +1,6 @@
 #!/bin/sh
-node --enable-source-maps "$(dirname "$0")/../main.js"
+if test -d "$(dirname "$0")/../../node_modules"; then
+    node --enable-source-maps "$(dirname "$0")/../neutrino-compiler/main.js";
+else
+    node --enable-source-maps "$(dirname "$0")/../main.js";
+fi

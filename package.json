@@ -39,7 +39,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "(cd test; ../bin/neutrino)",
-    "build-test": "npm run build && npm run test"
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning test.ts"
   }
 }

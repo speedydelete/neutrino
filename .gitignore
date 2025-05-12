@@ -6,3 +6,4 @@
 /test/**/*.h
 /test/**/*.o
 /test/index
+/test_results.md

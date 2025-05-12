@@ -22,5 +22,6 @@ let parsedGlobalDTS = parser.parse(globalDTS, {
     sourceFilename: 'index.d.ts',
     plugins: [['typescript', {dts: true}]],
 });
+GLOBAL_SCOPE.set('undefined', t.undefined);
 (new Inferrer('builtins/index.d.ts', globalDTS, GLOBAL_SCOPE, false)).program(parsedGlobalDTS.program);
 GLOBAL_SCOPE.set('globalThis', t.object(Object.fromEntries(Array.from(GLOBAL_SCOPE.vars.entries()))));
