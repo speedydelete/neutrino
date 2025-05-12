@@ -19,9 +19,9 @@ char* stradd(char* x, char* y) {
     int xl = strlen(x);
     int yl = strlen(y);
     char* out = safe_malloc(xl + yl + 1);
-    strncpy(out, x, xl);
-    strncpy(out + xl, y, yl);
-    out[xl + yl] = '\n';
+    memcpy(out, x, xl);
+    memcpy(out + xl, y, yl);
+    out[xl + yl] = '\0';
     return out;
 }
 

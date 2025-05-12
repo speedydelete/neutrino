@@ -113,11 +113,11 @@ char* string_padEnd(char* this, double length, char* str) {
         return this;
     }
     char* out = safe_malloc(sizeof(char) * (length + 1));
-    strncpy(out, this, start_length);
+    memcpy(out, this, start_length);
     int str_length = strlen(str);
     int iter = ceil((double)(length - start_length) / (double)str_length);
     for (int i = 0; i < iter; i++) {
-        strncpy(out + start_length + str_length * i, str, length - start_length - i * str_length);
+        memcpy(out + start_length + str_length * i, str, length - start_length - i * str_length);
     }
     out[(int)length] = '\0';
     return out;
@@ -129,11 +129,11 @@ char* string_padStart(char* this, double length, char* str) {
         return this;
     }
     char* out = safe_malloc(sizeof(char) * (length + 1));
-    strncpy(out + (int)length - start_length, this, start_length);
+    memcpy(out + (int)length - start_length, this, start_length);
     int str_length = strlen(str);
     int iter = ceil((double)(length - start_length) / (double)str_length);
     for (int i = 0; i < iter; i++) {
-        strncpy(out + str_length * i, str, length - start_length - i * str_length);
+        memcpy(out + str_length * i, str, length - start_length - i * str_length);
     }
     out[(int)length] = '\0';
     return out;
@@ -141,11 +141,12 @@ char* string_padStart(char* this, double length, char* str) {
 
 char* string_repeat(char* this, double times) {
     int length = strlen(this);
-    char* out = safe_malloc(sizeof(char) * (length + 1));
+    int total = length * times;
+    char* out = safe_malloc(sizeof(char) * (total + 1));
     for (int i = 0; i < times; i++) {
-        strncpy(out + i * length, this, length);
+        memcpy(out + i * length, this, length);
     }
-    out[(int)length] = '\0';
+    out[total] = '\0';
     return out;
 }
 
@@ -170,9 +171,9 @@ char* string_replace(char* this, char* old, char* new) {
     int new_length = strlen(new);
     int out_length = this_length - old_length + new_length;
     char* out = safe_malloc(sizeof(char) * (out_length + 1));
-    strncpy(out, old, i);
-    strncpy(out + i, new, new_length);
-    strncpy(out + i + new_length, this + i, this_length - new_length);
+    memcpy(out, this, i);
+    memcpy(out + i, new, new_length);
+    memcpy(out + i + new_length, this + i, this_length - new_length);
     out[out_length] = '\0';
     return out;
 }
@@ -200,9 +201,9 @@ char* string_replaceAll(char* this, char* old, char* new) {
         int new_length = strlen(new);
         int out_length = this_length - old_length + new_length;
         char* temp = safe_malloc(sizeof(char) * out_length);
-        strncpy(temp, old, i);
-        strncpy(temp + i, new, new_length);
-        strncpy(temp + i + new_length, this + i, this_length - new_length);
+        memcpy(temp, old, i);
+        memcpy(temp + i, new, new_length);
+        memcpy(temp + i + new_length, this + i, this_length - new_length);
         this = temp;
         out = this;
     }

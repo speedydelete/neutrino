@@ -84,6 +84,8 @@ export class Inferrer extends ASTManipulator {
                     call.cName = cmd.slice(4);
                 } else if (cmd === 'this is any[]') {
                     call.thisIsAnyArray = true;
+                } else if (cmd === 'real void') {
+                    call.realVoid = true;
                 }
             }
         }

@@ -159,8 +159,8 @@ declare var Math: Math;
 
 
 interface Console {
-    /* no this */ log(message: string): void;
-    /* no this */ input(prompt: string): string;
+    /* c = console_log, no this, real void */ log(message: string): void;
+    /* c = console_input, no this, real void */ input(prompt: string): string;
 }
 
 declare var console: Console;

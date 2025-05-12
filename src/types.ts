@@ -45,6 +45,7 @@ export interface CallData {
     noThis?: boolean;
     cName?: string;
     thisIsAnyArray?: boolean;
+    realVoid?: boolean;
 }
 
 export interface Indexes {

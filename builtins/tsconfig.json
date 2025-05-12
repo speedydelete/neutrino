@@ -2,5 +2,5 @@
     "compilerOptions": {
         "noLib": true
     },
-    "files": ["index.d.ts", "dom/index.ts"]
+    "files": ["index.d.ts"]
 }

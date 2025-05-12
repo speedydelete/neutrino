@@ -83,7 +83,7 @@ function validate(value: unknown): Config {
     if (value.useDefaultLdflags) {
         value.ldflags = LDFLAGS + ' ' + value.ldflags;
     }
-    validateKey(value, 'optimization', isNumber, 1);
+    validateKey(value, 'optimization', isNumber, 3);
     return value;
 }
 

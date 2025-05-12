@@ -82,7 +82,12 @@ export class Generator extends ASTManipulator {
 
     type(type: Type, name?: string, decl: boolean = false): string {
         if (type.type === 'object' && type.call) {
-            let out = this.type(type.call.returnType) + ' ';
+            let out: string;
+            if (type.call.realVoid) {
+                out = 'void ';
+            } else {
+                out = this.type(type.call.returnType) + ' ';
+            }
             out += (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(';
             if (!type.call.noThis) {
                 out += 'object* this';
