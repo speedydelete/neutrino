@@ -1,5 +1,5 @@
 
-import {loadConfig, transformAndCompileAll} from './lib/index.js';
+import {loadConfig, transformAndCompileAll} from '../lib/index.js';
 
 try {
     await loadConfig();
