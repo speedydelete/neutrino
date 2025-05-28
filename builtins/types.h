@@ -14,7 +14,29 @@
     type data_name[]; \
 } name;
 
+
 typedef uint64_t symbol;
+
+typedef union any {
+    void* undefined;
+    void* null;
+    bool boolean;
+    double number;
+    char* string;
+    symbol symbol;
+    struct bigint* bigint;
+    struct object* object;
+    union any* (*function)();
+    struct proxy* proxy;
+    struct array* array;
+} any;
+
+typedef struct unknown {
+    uint8_t type;
+    any value;
+} unknown;
+
+
 LIST_STRUCT(bigint, uint32_t, data);
 
 typedef struct getter_setter {
@@ -23,7 +45,7 @@ typedef struct getter_setter {
 } getter_setter;
 
 typedef struct property {
-    property* next;
+    struct property* next;
     uint64_t key;
     uint8_t flags;
     any value;
@@ -32,7 +54,7 @@ typedef struct property {
 #define IS_ACCESSOR 
 
 typedef struct object {
-    object* prototype;
+    struct object* prototype;
     property* data[16];
 } object;
 
@@ -47,9 +69,9 @@ typedef struct proxy {
     unknown* (*get)(object* target, unknown* key);
     void (*set)(object* target, unknown* key, unknown* value);
     void (*delete)(object* target, unknown* key);
-    array* (*own_keys)(object* target, unknown* key, unknown* value);
-    void (*call)(object* target, unknown* this, array* args);
-    void (*construct)(object* target, array* args);
+    struct array* (*own_keys)(object* target, unknown* key, unknown* value);
+    void (*call)(object* target, unknown* this, struct array* args);
+    void (*construct)(object* target, struct array* args);
 } proxy;
 
 typedef struct array {
@@ -72,66 +94,25 @@ LIST_STRUCT(float64array, double, data);
 
 typedef double date;
 LIST_STRUCT(regexp, uint8_t, data);
-LIST_STRUCT(set, any, data);
 
 typedef struct map_item {
-    map_item* next;
+    struct map_item* next;
     any key;
     any value;
 } map_item;
 
-typedef map_item[16] map;
+typedef struct map {
+    map_item data[16];
+} map;
 
 typedef struct set_item {
-    set_item* next;
+    struct set_item* next;
     any value;
 } set_item;
 
-typedef set_item[16] set;
-
-
-typedef enum type_tag {
-    UNDEFINED_T,
-    NULL_T,
-    BOOLEAN_T,
-    STRING_TAG,
-    SYMBOL_TAG,
-    BIGINT_TAG,
-} type_tag;
-
-typedef struct unknown {
-    type_tag type;
-    union {
-        void* undefined;
-        void* null;
-        bool boolean;
-        double number;
-        char* string;
-        symbol symbol;
-        bigint* bigint;
-        object* object;
-        any* (*function)();
-        function_with_object* function_with_object;
-        proxy* proxy;
-        array* array;
-    };
-} unknown;
-
-typedef union any {
-    void* undefined;
-    void* null;
-    bool boolean;
-    double number;
-    char* string;
-    full_string* full_string;
-    symbol symbol;
-    bigint* bigint;
-    object* object;
-    any* (*function)();
-    proxy* proxy;
-    array* array;
-    unknown unknown;
-} any;
+typedef struct set {
+    set_item data[16];
+} set;
 
 
 #define NaN ((number)NAN)

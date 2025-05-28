@@ -23,8 +23,6 @@ export type StringKeyword = BaseType<'string'>;
 export type SymbolKeyword = BaseType<'symbol'>;
 export type BigIntKeyword = BaseType<'bigint'>;
 
-export type Latin1String = BaseType<'string'> & {latin1: true};
-
 interface ValueType<T extends string = string, Value extends any = any> extends BaseType<T> {
     copy(): ValueType<T, Value>;
     value: Value;
@@ -42,7 +40,7 @@ export interface UniqueSymbol extends BaseType<'unique_symbol'> {
 
 export type Boolean = BooleanKeyword | BooleanValue;
 export type Number = NumberKeyword | NumberValue;
-export type String = StringKeyword | StringValue | Latin1String;
+export type String = StringKeyword | StringValue;
 export type Symbol = SymbolKeyword | UniqueSymbol;
 export type BigInt = BigIntKeyword | BigIntValue;
 
@@ -163,8 +161,6 @@ export const boolean: BooleanKeyword & ((value: boolean) => BooleanValue) = crea
 export const number: NumberKeyword & ((value: number) => NumberValue) = createValueTypeFactory('number', 'number_value');
 export const string: StringKeyword & ((value: string) => StringValue) = createValueTypeFactory('string', 'string_value');
 export const bigint: BigIntKeyword & ((value: bigint) => BigIntValue) = createValueTypeFactory('bigint', 'bigint_value');
-
-export const latin1String: Latin1String = Object.assign(createType<Latin1String>('string', () => 'string', function(other) {return other.type === 'string' || other.type === 'string_value'}), {latin1: true});
 
 let nextSymbolID = 1;
 let symbolProto = createType('unique_symbol', () => 'unique symbol', function(this: UniqueSymbol, other: Type) {

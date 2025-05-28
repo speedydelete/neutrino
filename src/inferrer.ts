@@ -510,8 +510,6 @@ export class Inferrer extends ASTManipulator {
         if (a.type === 'string' || a.type === 'string_value' || b.type === 'string' || b.type === 'string_value') {
             if (a.type === 'string_value' && b.type === 'string_value') {
                 return t.string(a.value + b.value);
-            } else if ('latin1' in a && 'latin1' in b) {
-                return t.latin1String;
             } else {
                 return t.string;
             }
@@ -537,18 +535,13 @@ export class Inferrer extends ASTManipulator {
             case 'NullLiteral':
                 return t.null;
             case 'BooleanLiteral':
-                return t.boolean;
+                return t.boolean(node.value);
             case 'NumericLiteral':
-                return t.number;
+                return t.number(node.value);
             case 'StringLiteral':
-                for (let i = 0; i < node.value.length; i++) {
-                    if (node.value.charCodeAt(i) > 255) {
-                        return t.string;
-                    }
-                }
-                return t.latin1String;
+                return t.string(node.value);
             case 'BigIntLiteral':
-                return t.bigint;
+                return t.bigint(BigInt(node.value));
             case 'RegExpLiteral':
                 return this.getGlobalVar('RegExp');
             case 'DecimalLiteral':

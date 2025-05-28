@@ -901,8 +901,6 @@ export class Generator extends ASTManipulator {
                 this.topLevel += code;
             }
         }
-        // @ts-ignore
-        let dir = import.meta.dirname;
         let out = '\n';
         if (this.importIncludes.length > 0) {
             out += this.importIncludes.join('\n') + '\n\n';
