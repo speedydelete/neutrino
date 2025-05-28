@@ -1,8 +1,8 @@
 
 import * as b from '@babel/types';
 import * as parser from '@babel/parser';
-import {t, Type} from './types.js';
-import {Stack, Scope, ASTManipulator} from './util.js';
+import {t, Type, Stack, Scope, ASTManipulator} from './util.js';
+import type {Compiler} from './compiler.js';
 
 
 export class Inferrer extends ASTManipulator {
@@ -10,8 +10,8 @@ export class Inferrer extends ASTManipulator {
     thisTypes: Stack<Type>;
     superTypes: Stack<Type>;
 
-    constructor(fullPath: string, raw: string, scope?: Scope, useGlobalThis: boolean = true) {
-        super(fullPath, raw, scope);
+    constructor(compiler: Compiler, fullPath: string, raw: string, scope?: Scope, useGlobalThis: boolean = true) {
+        super(compiler, fullPath, raw, scope);
         this.thisTypes = this.createStack(useGlobalThis ? [this.getVar('globalThis')] : []);
         this.superTypes = this.createStack();
     }
@@ -481,6 +481,51 @@ export class Inferrer extends ASTManipulator {
         return variable;
     }
 
+    add(a: Type, b: Type): Type {
+        if (a.type === 'union') {
+            if (b.type === 'union') {
+                let out = [];
+                for (let x of a.types) {
+                    for (let y of b.types) {
+                        out.push(this.add(x, y));
+                    }
+                }
+                return t.union(out);
+            } else {
+                return t.union(a.types.map(x => this.add(x, b)));
+            }
+        } else if (b.type === 'union') {
+            return t.union(b.types.map(x => this.add(a, x)));
+        }
+        if (a.type === 'object') {
+            if (b.type === 'object') {
+                a = this.toPrimitive(a);
+                b = this.toPrimitive(b);
+            } else {
+                a = this.toPrimitive(a, (b.type === 'number' || b.type === 'number_value' || b.type === 'bigint' || b.type === 'bigint_value') ? 'number' : 'string');
+            }
+        } else if (b.type === 'object') {
+            b = this.toPrimitive(b, (a.type === 'number' || a.type === 'number_value' || a.type === 'bigint' || a.type === 'bigint_value') ? 'number' : 'string');
+        }
+        if (a.type === 'string' || a.type === 'string_value' || b.type === 'string' || b.type === 'string_value') {
+            if (a.type === 'string_value' && b.type === 'string_value') {
+                return t.string(a.value + b.value);
+            } else if ('latin1' in a && 'latin1' in b) {
+                return t.latin1String;
+            } else {
+                return t.string;
+            }
+        }
+        let aIsBigInt = a.type === 'bigint' || a.type === 'bigint_value';
+        let bIsBigInt = b.type === 'bigint' || b.type === 'bigint_value';
+        if (aIsBigInt !== bIsBigInt) {
+            this.error('TypeError', 'Cannot add bigint to non-bigint non-string');
+        } else if (aIsBigInt && bIsBigInt) {
+            return t.bigint;
+        }
+        return t.number;
+    }
+
     expression(node: b.Expression | b.PrivateName | b.V8IntrinsicIdentifier | b.ImportExpression | b.FunctionDeclaration | b.ClassDeclaration | b.TSDeclareFunction): Type {
         this.setSourceData(node);
         let out: Type;
@@ -496,9 +541,14 @@ export class Inferrer extends ASTManipulator {
             case 'NumericLiteral':
                 return t.number;
             case 'StringLiteral':
-                return t.string;
+                for (let i = 0; i < node.value.length; i++) {
+                    if (node.value.charCodeAt(i) > 255) {
+                        return t.string;
+                    }
+                }
+                return t.latin1String;
             case 'BigIntLiteral':
-                this.error('SyntaxError', 'BigInts are not supported');
+                return t.bigint;
             case 'RegExpLiteral':
                 return this.getGlobalVar('RegExp');
             case 'DecimalLiteral':
@@ -527,7 +577,7 @@ export class Inferrer extends ASTManipulator {
                         if (elts instanceof Array) {
                             elts.push(t.undefined);
                         } else {
-                            elts = t.union(elts, t.undefined);
+                            elts = t.union<Type>(elts, t.undefined);
                         }
                     } else if (elt.type === 'SpreadElement') {
                         let type = this.expression(elt.argument);
@@ -545,7 +595,7 @@ export class Inferrer extends ASTManipulator {
                             if (elts instanceof Array) {
                                 elts = t.union(type, ...elts);
                             } else {
-                                elts = t.union(elts, type);
+                                elts = t.union<Type>(elts, type);
                             }
                         }
                     } else {
@@ -624,9 +674,7 @@ export class Inferrer extends ASTManipulator {
                     case 'instanceof':
                         return t.boolean;
                     case '+':
-                        let left = this.expression(node.left);
-                        let right = this.expression(node.right);
-                        return left.type === 'string' || right.type === 'string' ? t.string : t.number;
+                        return this.add(this.expression(node.left), this.expression(node.right));
                     case '|>':
                         this.error('SyntaxError', 'The pipeline operator is not supported');
                     default:
@@ -713,7 +761,7 @@ export class Inferrer extends ASTManipulator {
                 let prop = node.meta.name + '.' + node.property.name;
                 switch (prop) {
                     case 'new.target':
-                        return t.union(t.object(), t.undefined);
+                        return t.union<Type>(t.object(), t.undefined);
                     case 'import.meta':
                         return t.object();
                     default:

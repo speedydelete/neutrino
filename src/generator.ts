@@ -1,24 +1,12 @@
 
 import type * as b from '@babel/types';
-import * as t from './types.js';
-import {Type} from './types.js';
-import {Stack, Scope, ASTManipulator, changeExtension, GLOBAL_SCOPE} from './util.js';
+import {t, Type, SimpleType, Stack, Scope, ASTManipulator} from './util.js';
 import {Inferrer} from './inferrer.js';
-import {Caster} from './caster.js';
+import {UnionType, UnionFunc, UnionFuncCall, unionFuncCallsAreEqual, getCUnionFuncName} from './unions.js';
+import type {Compiler} from './compiler.js';
 
 
-const TYPES = {
-    any: 'any*',
-    undefined: 'void*',
-    void: 'void*',
-    null: 'void**',
-    boolean: 'bool',
-    number: 'double',
-    string: 'char*',
-    symbol: 'symbol',
-    object: 'object*',
-    array: 'array*',
-};
+export type CTypeName = UnionType | 'unknown';
 
 
 export class Generator extends ASTManipulator {
@@ -27,7 +15,6 @@ export class Generator extends ASTManipulator {
 
     id: string;
     infer: Inferrer;
-    cast: Caster;
     importIncludes: string[] = [];
     functions: string[] = [];
     topLevel: string = '';
@@ -36,11 +23,10 @@ export class Generator extends ASTManipulator {
     isGlobal: boolean = true;
     initScope: Scope;
 
-    constructor(id: string, fullPath: string, raw: string, scope?: Scope) {
-        super(fullPath, raw, scope);
+    constructor(compiler: Compiler, id: string, fullPath: string, raw: string, scope?: Scope) {
+        super(compiler, fullPath, raw, scope);
         this.id = id;
-        this.infer = this.newConnectedSubclass(Inferrer);
-        this.cast = this.newConnectedSubclass(Caster);
+        this.infer = this.new(Inferrer);
         this.thisArgs = this.createStack();
         this.thisTypes = this.createStack([this.getVar('globalThis')]);
         this.initScope = this.scope;
@@ -55,7 +41,7 @@ export class Generator extends ASTManipulator {
         return '"' + value.replaceAll('"', '\\"').replaceAll('\n', '\\n') + '"';
     }
 
-    property(prop: b.Expression | b.PrivateName): [string, t.String | t.Symbol | t.Any] {
+    property(prop: b.Expression | b.PrivateName): [string, t.Type] {
         if (prop.type === 'Identifier') {
             return [this.string(prop.name), t.string];
         }
@@ -73,47 +59,72 @@ export class Generator extends ASTManipulator {
             case 'symbol':
                 return [out, type];
             case 'object':
-                return [`any_to_property_key(object_to_primitive(${out}))`, t.any];
-            case 'array':
-                return [`array_to_string(${out})`, t.string];
+                if (type.specialName === 'array') {
+                    return [`array_to_string(${out})`, t.string];
+                }
+                return [`primitive_to_property_key(object_to_primitive(${out}))`, t.any];
             default:
                 return [`any_to_property_key(${out})`, t.any];
         }
     }
 
     type(type: Type, name?: string, decl: boolean = false): string {
-        if (type.type === 'object' && type.call) {
-            let out: string;
-            if (type.call.realVoid) {
-                out = 'void ';
-            } else {
-                out = this.type(type.call.returnType) + ' ';
-            }
-            out += (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(';
-            if (!type.call.noThis) {
-                out += 'object* this';
-                if (type.call.params.length > 0) {
-                    out += ', ';
+        let out: string;
+        if (type.type === 'object') {
+            if (type.call) {
+                if (type.call.realVoid) {
+                    out = 'void ';
+                } else {
+                    out = this.type(type.call.returnType) + ' ';
                 }
+                out += (decl ? (name ?? '') : '(*' + (name ?? '') + ')') + '(';
+                if (!type.call.noThis) {
+                    out += 'object* this';
+                    if (type.call.params.length > 0) {
+                        out += ', ';
+                    }
+                }
+                if (type.call.params.length > 0) {
+                    out += type.call.params.map(param => this.type(param[1], param[0])).join(', ');
+                }
+                out += ')';
+                if (decl) {
+                    out += ';';
+                }
+                return out;
+            } else if (type.specialName) {
+                if (type.specialName === 'function' || type.specialName === 'symbolFunction') {
+                    this.error('InternalError', 'Non-callable function type');
+                } else {
+                    out = type.specialName + '*';
+                }
+            } else {
+                out = 'object*';
             }
-            if (type.call.params.length > 0) {
-                out += type.call.params.map(param => this.type(param[1], param[0])).join(', ');
-            }
-            out += ')';
-            if (decl) {
-                out += ';';
-            }
-            return out;
+        } else if (type.type === 'any' || type.type === 'unknown' || type.type === 'never') {
+            out = 'unknown*';
+        } else if (type.type === 'undefined' || type.type === 'null' || type.type === 'void') {
+            out = 'void*';
+        } else if (type.type === 'boolean' || type.type === 'boolean_value') {
+            out = 'bool';
+        } else if (type.type === 'number' || type.type === 'number_value') {
+            out = 'double';
+        } else if (type.type === 'string' || type.type === 'string_value') {
+            out = 'latin1' in type ? 'char*' : 'full_string*';
+        } else if (type.type === 'symbol' || type.type === 'unique_symbol') {
+            out = 'symbol';
+        } else if (type.type === 'bigint' || type.type === 'bigint_value') {
+            out = 'bigint';
         } else {
-            let out = TYPES[type.type];
-            if (name) {
-                out += ' ' + name;
-            }
-            if (decl) {
-                out = 'extern ' + out + ';';
-            }
-            return out;
+            this.error('InternalError', `Invalid type in Generator.type of type ${type.type}`);
         }
+        if (name) {
+            out += ' ' + name;
+        }
+        if (decl) {
+            out = 'extern ' + out + ';';
+        }
+        return out;
     }
 
     identifier(name: string, isFunction: boolean = false): string {
@@ -143,7 +154,7 @@ export class Generator extends ASTManipulator {
 
     function(node: b.Function): string {
         let name = 'id' in node && node.id ? 'js_function_' + this.id + '_' + node.id.name : 'js_anon_' + Generator.nextAnon++;
-        let type = this.infer.function(node.params, node.returnType).call;
+        let type = this.infer.function(node.params, node.typeParameters, node.returnType).call;
         if (!type) {
             this.error('InternalError', 'Not a function');
         }
@@ -204,10 +215,233 @@ export class Generator extends ASTManipulator {
         }
     }
 
+    getCTypeName(type: t.NonUnionSimpleType): CTypeName {
+        if (type.type === 'any') {
+            return 'unknown';
+        } else if (type.type === 'object' && type.specialName) {
+            if (type.specialName === 'symbolFunction') {
+                return 'function';
+            } else {
+                return type.specialName;
+            }
+        } else if (type.type === 'boolean_value') {
+            return 'boolean';
+        } else if (type.type === 'number_value') {
+            return 'number';
+        } else if (type.type === 'string_value') {
+            return 'string';
+        } else if (type.type === 'unique_symbol') {
+            return 'symbol';
+        } else if (type.type === 'bigint_value') {
+            return 'bigint';
+        } else {
+            return type.type;
+        }
+    }
+
+    getUnionFunc(func: UnionFunc, ...argTypes: SimpleType[]): string {
+        let args = argTypes.map(type => type.type === 'union' ? new Set(type.types.map(type => this.getCTypeName(type))) : this.getCTypeName(type));
+        for (let arg of args) {
+            if (arg instanceof Set) {
+                for (let type of arg) {
+                    if (type === 'unknown') {
+                        return func;
+                    }
+                }
+            } else if (arg === 'unknown') {
+                return func;
+            }
+        }
+        let newCall: UnionFuncCall = {func, args: args as UnionFuncCall['args']};
+        let cFunc = getCUnionFuncName(newCall);
+        let found = false;
+        for (let call of this.compiler.unionFuncCalls) {
+            if (unionFuncCallsAreEqual(call, newCall)) {
+                return cFunc;
+            }
+        }
+        this.compiler.unionFuncCalls.push(newCall);
+        return cFunc;
+    }
+
+    toAny(value: string, type: SimpleType): string {
+        if (type.type === 'union') {
+            return this.getUnionFunc('to_any', type) + '(' + value + ')';
+        } else {
+            return `create_unknown_from_${type.type.replace('_value', '').replace('unique_', '')}(${value})`;
+        }
+    }
+
+    toBoolean(value: string, type: SimpleType): string {
+        switch (type.type) {
+            case 'undefined':
+            case 'null':
+                return `(${value}, false)`;
+            case 'boolean':
+            case 'number':
+                return value;
+            case 'string':
+                return `(${value} == '\0')`;
+            case 'any':
+                return `any_to_boolean(${value})`;
+            default:
+                return `(${value}, true)`;
+        }
+    }
+    
+    toNumber(value: string, type: SimpleType): string {
+        switch (type.type) {
+            case 'undefined':
+                return `(${value}, NaN)`;
+            case 'null':
+                return `(${value}, null)`;
+            case 'boolean':
+                return `((double)${value})`;
+            case 'number':
+                return value;
+            case 'string':
+                return `parse_number(${value})`;
+            case 'symbol':
+                this.error('TypeError',`Cannot convert symbol to number`);
+            case 'object':
+                if (type.specialName) {
+                    switch (type.specialName) {
+                        case 'array':
+                            return `parse_number(array_to_string(${value}), 10)`;
+                        case 'proxy':
+                            return `any_to_number(proxy_to_primitive(${value}))`;
+                        default:
+                            this.error('InternalError', `Invalid special name: ${type.specialName}`);
+                    }
+                }
+                return `any_to_number(object_to_primitive(${value}))`;
+            default:
+                return `any_to_number(${value})`;
+        }
+    }
+
+    toString(value: string, type: SimpleType): string {
+        switch (type.type) {
+            case 'any':
+                return `to_string(${value})`;
+            case 'undefined':
+                return `(${value}, "undefined")`;
+            case 'null':
+                return `(${value}, "null")`;
+            case 'boolean':
+                return `(${value} ? "true" : "false")`;
+            case 'boolean_value':
+                return type.value ? '"true"' : '"false"';
+            case 'number':
+                return `number_to_string(${value}, 10)`;
+            case 'number_value':
+                return `"${value}"`;
+            case 'string':
+            case 'string_value':
+                return value;
+            case 'symbol':
+            case 'unique_symbol':
+                this.error('TypeError', 'Cannot convert symbol to string');
+            case 'bigint':
+                return `bigint_to_string(${value}, 10)`;
+            case 'bigint_value':
+                return `(${value}, "${type.value}")`;
+            case 'object':
+                return `to_string(object_to_primitive(${value}))`;
+            default:
+                return this.getUnionFunc('to_string', type) + '(' + value + ')';
+        }
+    }
+
+    to(newType: SimpleType, value: string, type: SimpleType): string {
+        switch (newType.type) {
+            case 'any':
+                return this.toAny(value, type);
+            case 'boolean':
+            case 'boolean_value':
+                return this.toBoolean(value, type);
+            case 'number':
+            case 'number_value':
+                return this.toNumber(value, type);
+            case 'string':
+            case 'string_value':
+                return this.toString(value, type);
+            default:
+                this.error('TypeError', `Cannot cast to type ${newType} from type ${type}. This may mean you passed an invalid argument to a function.`);
+        }
+    }
+
+    toPrimitiveString(value: string, type: SimpleType): string {
+        if (type.type === 'object') {
+            return `object_to_primitive(${type})`;
+        } else if (type.type === 'union') {
+            return this.getUnionFunc('to_primitive', type) + '(' + value + ')';
+        } else {
+            return `create_primitive_union_from_${type.type.replace('_value', '').replace('unique_', '')}(${value})`;
+        }
+    }
+
+    typeof(value: string, type: SimpleType): string {
+        switch (type.type) {
+            case 'null':
+                return `(${value}, "object")`;
+            case 'any':
+                return `typeof(${value})`;
+            case 'union':
+                return this.getUnionFunc('typeof', type) + '(' + value + ')';
+            default:
+                return `(${value}, "${type}")`;
+        }
+    }
+
+    eq(x: string, xType: SimpleType, y: string, yType: SimpleType): string {
+        let xt = xType.type;
+        let yt = yType.type;
+        if (xt === 'union' || yt === 'union') {
+            return this.getUnionFunc('eq', xType, yType) + '(' + x + ', ' + y + ')';
+        } else if (xt === 'any' || yt === 'any') {
+            return `eq(${this.toAny(x, xType)}, ${this.toAny(y, yType)})`;
+        } else if (xt === 'undefined' || xt === 'null' || yt === 'undefined' || yt === 'null') {
+            return `(${x}, ${y}, ${(xt === 'undefined' || xt === 'null') && (yt === 'undefined' || yt === 'null')})`;
+        } else if (xt === 'symbol' || yt === 'symbol') {
+            if (xt === 'symbol' && yt === 'symbol') {
+                return `(${x} == ${y})`;
+            } else {
+                return `(${x}, ${y}, false)`;
+            }
+        } else if (xt === 'object' || yt === 'object') {
+            if (xt === 'object' && yt === 'object') {
+                return `(${x} == ${y})`;
+            } else {
+                return `eq_primitive(${this.toPrimitiveString(x, xType)}, ${this.toPrimitiveString(y, yType)})`;
+            }
+        } else if (xt === 'string' || yt === 'string') {
+            return `(strcmp(${this.toString(x, xType)}, ${this.toString(y, yType)}) == 0)`;
+        } else {
+            return `(${x} == ${y})`;
+        }
+    }
+
+    seq(x: string, xType: SimpleType, y: string, yType: SimpleType): string {
+        let xt = xType.type;
+        let yt = yType.type;
+        if (xt === 'union' || yt === 'union') {
+            return this.getUnionFunc('seq', xType, yType) + '(' + x + ', ' + y + ')';
+        } else if (xt === 'any' || yt === 'any') {
+            return `seq(${this.toAny(x, xType)}, ${this.toAny(y, yType)})`;
+        } else if (xt !== yt) {
+            return `(${x}, ${y}, false)`;
+        } else if (xt === 'undefined' || xt === 'null') {
+            return `(${x}, ${y}, true)`;
+        } else if (xt === 'string') {
+            return `(strcmp(${x}, ${y}) == 0)`;
+        } else {
+            return `(${x} == ${y})`
+        }
+    }
+
     expression(node: b.Expression | b.PrivateName | b.V8IntrinsicIdentifier | b.FunctionDeclaration | b.ClassDeclaration | b.TSDeclareFunction): string {
         this.setSourceData(node);
-        let prop: string;
-        let type: Type;
         switch (node.type) {
             case 'Identifier':
                 return this.identifier(node.name);
@@ -228,7 +462,7 @@ export class Generator extends ASTManipulator {
                 }
                 return out;
             case 'BigIntLiteral':
-                this.error('SyntaxError', 'BigInts are not supported');
+                return `create_bigint(${this.string(node.value)})`;
             case 'DecimalLiteral':
                 this.error('SyntaxError', 'BigDecimals are not supported');
             case 'Super':
@@ -287,18 +521,87 @@ export class Generator extends ASTManipulator {
             case 'FunctionDeclaration':
                 return this.function(node);
             case 'UnaryExpression':
-                return this.cast.unary(node.operator, this.expression(node.argument), this.infer.expression(node.argument).type);
+                let arg = this.expression(node.argument);
+                let type = this.simplify(this.infer.expression(node.argument));
+                switch (node.operator) {
+                    case '!':
+                        return '!' + this.toBoolean(arg, type);
+                    case '+':
+                    case '-':
+                    case '~':
+                        return node.operator + this.toNumber(arg, type);
+                    case 'typeof':
+                        return this.typeof(arg, type);
+                    case 'void':
+                        return `(${arg}, NULL)`;
+                    case 'throw':
+                        return 'throw(' + arg + ')';
+                    default:
+                        this.error('InternalError', `The delete operator is not supported`);
+                }
             case 'UpdateExpression':
                 return (node.prefix ? '' : 'postfix_' + (node.operator === '++' ? 'inc' : 'dec')) + '(' + this.expression(node.argument) + ')';
             case 'BinaryExpression':
-                return this.cast.binary(node.operator, this.expression(node.left), this.infer.expression(node.left).type, this.expression(node.right), this.infer.expression(node.right).type);
+                let left = this.expression(node.left);
+                let leftType = this.simplify(this.infer.expression(node.left));
+                let right = this.expression(node.right);
+                let rightType = this.simplify(this.infer.expression(node.right));
+                switch (node.operator) {
+                        case '==':
+                            return this.eq(left, leftType, right, rightType);
+                        case '!=':
+                            return '!' + this.eq(left, leftType, right, rightType);
+                        case '===':
+                            return this.seq(left, leftType, right, rightType)
+                        case '!==':
+                            return '!' + this.seq(left, leftType, right, rightType);
+                        case '+':
+                            let type = this.infer.expression(node);
+                            if (type.type === 'string') {
+                                return `stradd(${this.toString(left, leftType)}, ${this.toString(right, rightType)})`;
+                            } else {
+                                return this.toNumber(left, leftType) + ' + ' + this.toNumber(right, rightType);
+
+                            }
+                        case '<':
+                        case '<=':
+                        case '>':
+                        case '>=':
+                        case '-':
+                        case '*':
+                        case '/':
+                            return this.toNumber(left, leftType) + ' ' + node.operator + ' ' + this.toNumber(right, rightType);
+                        case '%':
+                            return `fmod(${this.toNumber(left, leftType)}, ${this.toNumber(right, rightType)})`;
+                        case '**':
+                            return `pow(${this.toNumber(left, leftType)}, ${this.toNumber(right, rightType)})`;
+                        case '&':
+                        case '^':
+                        case '|':
+                        case '<<':
+                        case '>>>':
+                            return `(double)((uint32_t)${this.toNumber(left, leftType)} ${node.operator} (uint32_t)${this.toNumber(right, rightType)})`;
+                        case '>>':
+                            return `(double)((int32_t)${this.toNumber(left, leftType)} >>> (int32_t)${this.toNumber(right, rightType)})`;
+                        case 'instanceof':
+                            if (leftType.type === 'object' && rightType.type === 'object') {
+                                return `instanceof(${leftType}, ${rightType})`;
+                            } else {
+                                this.error('TypeError', `Cannot use instanceof operator on values of types ${leftType} and ${rightType}`);
+                            }
+                        case 'in':
+
+                        default:
+                            this.error('SyntaxError', 'The pipeline operator is not supported');
+                    }
             case 'LogicalExpression':
                 return this.expression(node.left) + ' ' + node.operator + ' ' + this.expression(node.right);
             case 'AssignmentExpression':
                 return this.assignment(node.left, this.expression(node.right));
             case 'MemberExpression':
             case 'OptionalMemberExpression':
-                [prop, type] = this.property(node.property);
+                let [prop, complexType] = this.property(node.property);
+                type = this.simplify(complexType);
                 let obj = this.expression(node.object);
                 let objType = this.infer.expression(node.object);
                 if (objType.type === 'undefined' || objType.type === 'null') {
@@ -311,7 +614,7 @@ export class Generator extends ASTManipulator {
                     return `optional_get_any_${type.type}(${obj}, ${prop})`;
                 } else if (objType.type === 'string' && prop === '"length"') {
                     return `strlen(${obj})`;
-                } else if (objType.type === 'array' && prop === '"length"') {
+                } else if (objType.type === 'object' && objType.specialName === 'array' && prop === '"length"') {
                     return `(${obj}->length)`;
                 } else {
                     let outType = this.infer.expression(node);
@@ -354,7 +657,7 @@ export class Generator extends ASTManipulator {
                         return func;
                     } else if (funcType.type !== 'object') {
                         this.error('TypeError', `Value of type ${funcType.type} is not callable`);
-                    } else if (funcType.call === null) {
+                    } else if (funcType.call === undefined) {
                         this.error('TypeError', 'Is not callable');
                     }
                     let call = funcType.call;
@@ -376,22 +679,28 @@ export class Generator extends ASTManipulator {
                             this.error('InternalError', 'This error should not occur (ArgumentPlaceholder node found)');
                         }
                         let out = this.expression(arg);
-                        let type = this.infer.expression(arg);
+                        let type = this.simplify(this.infer.expression(arg));
                         if (type.type === 'undefined' && call.params[i][2]) {
                             out = '(' + out + ', ' + this.expression(call.params[i][2]) + ')';
                         }
-                        if (type.type === 'array' && call.thisIsAnyArray) {
-                            if (Array.isArray(type.elts)) {
-                                if (type.elts.length === 0) {
-                                    out = 'create_array(0)';
-                                } else {
-                                    out = `create_array(${type.elts.length}, ${type.elts.map((type, i) => this.cast.toAny(`out->items[${i}]`, type.type)).join(', ')})`;
-                                }
+                        if (type.type === 'object' && type.specialName === 'array' && call.thisIsAnyArray) {
+                            if (type.indexes.length > 0) {
+                                out = `cast_array_to_any_array(${out}, ${this.string(type.indexes[0].value.type)})`;
                             } else {
-                                out = `cast_array_to_any_array(${out}, ${this.string(type.elts.type)})`;
+                                if (0 in type.props) {
+                                    let length = 0;
+                                    let props: string[] = [];
+                                    for (let i = 0; i in type.props; i++) {
+                                        length++;
+                                        props.push(this.toAny(`out->items[${i}]`, type));
+                                    }
+                                    return `create_array(${length}, ${props.join(', ')})`;
+                                } else {
+
+                                }
                             }
                         }
-                        return this.cast.to(out, type, call.params[i][1]);
+                        return this.to(this.simplify(call.params[i][1]), out, type);
                     }).filter(x => x !== undefined));
                     return '((' + this.type(funcType) + ')' + this.expression(node.callee) + ')(' + argsArray.join(', ') + ')';
                 } else {
@@ -549,7 +858,7 @@ export class Generator extends ASTManipulator {
                 return out;
             case 'ImportDeclaration':
                 let [path, id, scope] = this.getImportData(node.source.value);
-                this.importIncludes.push(`#include "${path}.h"`);
+                this.importIncludes.push(`#include "${path}.c"`);
                 for (let spec of node.specifiers) {
                     if (spec.type === 'ImportNamespaceSpecifier') {
                         this.error('SyntaxError', 'Namespace imports are not supported');
@@ -592,12 +901,11 @@ export class Generator extends ASTManipulator {
                 this.topLevel += code;
             }
         }
+        // @ts-ignore
         let dir = import.meta.dirname;
-        let out = `\n#include "${dir.slice(0, dir.lastIndexOf('/'))}/builtins/index.h"\n\n`;
+        let out = '\n';
         if (this.importIncludes.length > 0) {
             out += this.importIncludes.join('\n') + '\n\n';
-        } else {
-            out += '\n';
         }
         let decls = this.getDeclarations();
         if (decls.length > 0) {

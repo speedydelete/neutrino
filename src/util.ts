@@ -1,9 +1,14 @@
 
-import { join, dirname} from 'node:path';
+import {join, dirname} from 'node:path';
 import type * as b from '@babel/types';
 import * as t from './types.js';
-import {Type} from './types.js';
+import {Type, SimpleType} from './types.js';
 import {highlight} from './highlighter.js';
+import {Config} from './config.js';
+import type {Compiler} from './compiler.js';
+
+export * from './types.js';
+export * as t from './types.js';
 
 
 export function changeExtension(path: string, ext: string): string {
@@ -211,6 +216,8 @@ export const GLOBAL_SCOPE: Scope = new Scope(null);
 
 export class ASTManipulator {
 
+    compiler: Compiler;
+    config: Config;
     fullPath: string = '';
     raw: string = '';
     sourceData: SourceData = {
@@ -224,7 +231,9 @@ export class ASTManipulator {
     globalScope: Scope = GLOBAL_SCOPE;
     connectedManipulators: ASTManipulator[] = [];
 
-    constructor(fullPath: string, raw: string, scope?: Scope) {
+    constructor(compiler: Compiler, fullPath: string, raw: string, scope?: Scope) {
+        this.compiler = compiler;
+        this.config = compiler.config;
         this.fullPath = fullPath;
         this.raw = raw;
         this.sourceData.fullRaw = raw;
@@ -235,7 +244,7 @@ export class ASTManipulator {
         return new Stack(values, this.sourceData);
     }
 
-    new<T extends typeof ASTManipulator>(subclass: T): InstanceType<T> {
+    new<T extends new (...args: any[]) => ASTManipulator>(subclass: T): InstanceType<T> {
         let out = new subclass(this.fullPath, this.raw, this.scope);
         out.sourceData = this.sourceData;
         this.connectedManipulators.push(out);
@@ -345,7 +354,7 @@ export class ASTManipulator {
             case 'object':
                 if (typeof key !== 'object') {
                     return type.props[key] ?? t.undefined;
-                } else if (key.type === 'string-value' || key.type === 'number-value') {
+                } else if (key.type === 'string_value' || key.type === 'number_value') {
                     return type.props[key.value];
                 } else {
                     for (let index of type.indexes) {
@@ -410,6 +419,84 @@ export class ASTManipulator {
                 return t.union(Object.keys(type.props).map(t.string), type.indexes.map(x => x.key));
             default:
                 return t.any;
+        }
+    }
+
+    toPrimitive(type: SimpleType, hint: 'string' | 'number' | 'default' = 'default'): SimpleType {
+        switch (type.type) {
+            case 'any':
+                return type;
+            case 'undefined':
+            case 'null':
+            case 'boolean':
+            case 'boolean_value':
+            case 'number':
+            case 'number_value':
+            case 'string':
+            case 'string_value':
+            case 'symbol':
+            case 'unique_symbol':
+            case 'bigint':
+            case 'bigint_value':
+                return type;
+            case 'object':
+                let keys: (Type | PropertyKey)[] = [this.getProp(this.getGlobalVar('Symbol'), 'toPrimitive')];
+                if (hint === 'string') {
+                    keys.push('toString', 'valueOf');
+                } else {
+                    keys.push('valueOf', 'toString');
+                }
+                for (let key of keys) {
+                    let value = this.getProp(type, key);
+                    if (value.type === 'object') {
+                        let out = this.call(value);
+                        if (out.type === 'object') {
+                            continue;
+                        }
+                        return this.toPrimitive(this.simplify(type));
+                    }
+                }
+                this.error('TypeError', 'Cannot convert object to primitive');
+            default:
+                return t.union(type.types.map(x => this.toPrimitive(x)));
+        }
+    }
+
+    simplify(type: Type): SimpleType {
+        switch (type.type) {
+            case 'any':
+            case 'unknown':
+            case 'never':
+                return t.any;
+            case 'undefined':
+            case 'void':
+                return t.undefined;
+            case 'null':
+            case 'boolean':
+            case 'boolean_value':
+            case 'number':
+            case 'number_value':
+            case 'string':
+            case 'string_value':
+            case 'symbol':
+            case 'unique_symbol':
+            case 'bigint':
+            case 'bigint_value':
+            case 'object':
+                return type;
+            case 'union':
+                let types = type.types.map(type => this.simplify(type));
+                if (types.length === 0) {
+                    return t.any;
+                } else if (types.length === 1) {
+                    return types[0];
+                } else if (type.types.some(type => type.type === 'any')) {
+                    return t.any;
+                } else {
+                    return t.union(types);
+                }
+            default:
+                this.error('TypeError', `Cannot simplify type: ${type}`);
         }
     }
 
